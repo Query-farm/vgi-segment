@@ -1,0 +1,169 @@
+# name: test/sql/tracking.test
+# description: Protocols tracking plans, rules, flattened properties and the shared product-analytics definitions
+# group: [segment]
+
+require vgi
+
+require-env SEGMENT_WORKER
+
+require-env SEGMENT_FIXTURE_URL
+
+statement ok
+LOAD httpfs;
+
+statement ok
+LOAD json;
+
+statement ok
+ATTACH 'segment' (TYPE vgi, LOCATION '{SEGMENT_WORKER}');
+
+statement ok
+CREATE SECRET seg (TYPE segment, TOKEN 'test-token', BASE_URL '{SEGMENT_FIXTURE_URL}');
+
+# ------------------------------------------------------------------------ plans
+
+query TTTT
+SELECT id, name, slug, type FROM segment.tracking.plans ORDER BY id;
+----
+tp_main	Main Tracking Plan	main	LIVE
+tp_template	E-commerce Template	ecommerce-template	TEMPLATE
+
+# The replay server rate-limits its first /tracking-plans request (429 + Retry-After: 1);
+# the client waited and retried, so the scan above still returned every plan.
+query I
+SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/tracking-plans') WHERE status = 429;
+----
+1
+
+# type = 'LIVE' is sent as the API's type filter.
+query T
+SELECT name FROM segment.tracking.plans WHERE type = 'LIVE';
+----
+Main Tracking Plan
+
+query T
+SELECT query::JSON->>'type' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/tracking-plans') ORDER BY seq DESC LIMIT 1;
+----
+LIVE
+
+# ------------------------------------------------------------------------ rules
+
+query TTTTIT
+SELECT tracking_plan_id, rule_type, event_name, plan_type, property_count, is_deprecated FROM segment.tracking.rules ORDER BY tracking_plan_id, rule_type, event_name NULLS FIRST;
+----
+tp_main	GROUP	NULL	LIVE	2	false
+tp_main	IDENTIFY	NULL	LIVE	4	false
+tp_main	PAGE	Pricing	LIVE	1	false
+tp_main	TRACK	Order Completed	LIVE	7	false
+tp_main	TRACK	Product Viewed	LIVE	2	false
+tp_main	TRACK	Signed Up	LIVE	1	true
+tp_template	TRACK	Cart Viewed	TEMPLATE	1	false
+tp_template	TRACK	Order Completed	TEMPLATE	1	false
+
+query TTT
+SELECT event_name, required_properties, description FROM segment.tracking.rules WHERE tracking_plan_id = 'tp_main' AND event_name = 'Order Completed';
+----
+Order Completed	[order_id, total]	A customer completed an order
+
+# tracking_plan_id = reads that plan only (no plan list, no other plan's rules).
+statement ok
+CREATE TABLE before_rules AS SELECT count(*) AS n FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/tracking-plans/tp_main/rules');
+
+query I
+SELECT count(*) FROM segment.tracking.rules WHERE tracking_plan_id = 'tp_template';
+----
+2
+
+query I
+SELECT (SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/tracking-plans/tp_main/rules')) - n FROM before_rules;
+----
+0
+
+query T
+SELECT json_schema->>'$.properties.properties.required' FROM segment.tracking.rules WHERE tracking_plan_id = 'tp_template' AND event_name = 'Order Completed';
+----
+["order_id"]
+
+# ------------------------------------------------------------------- properties
+
+query TTTITTTT
+SELECT section, property_name, data_type, depth, is_required, is_nullable, is_array, item_type FROM segment.tracking.properties WHERE tracking_plan_id = 'tp_main' AND event_name = 'Order Completed' ORDER BY section, property_name;
+----
+context	ip	string	0	false	false	false	NULL
+properties	coupon	string	0	false	true	false	NULL
+properties	currency	string	0	false	false	false	NULL
+properties	order_id	string	0	true	false	false	NULL
+properties	products	array	0	false	false	true	object
+properties	products[].price	number	1	false	false	false	NULL
+properties	products[].sku	string	1	true	false	false	NULL
+properties	total	number	0	true	false	false	NULL
+
+query TTTRT
+SELECT property_name, enum_values, pattern, minimum, format FROM segment.tracking.properties WHERE tracking_plan_id = 'tp_main' AND property_name IN ('currency', 'products[].sku', 'total', 'email', 'ip') ORDER BY property_name;
+----
+currency	[USD, EUR]	NULL	NULL	NULL
+email	NULL	NULL	NULL	email
+ip	NULL	NULL	NULL	ipv4
+products[].sku	NULL	^[A-Z0-9-]+$	NULL	NULL
+total	NULL	NULL	0.0	NULL
+
+query TTTT
+SELECT rule_type, section, property_name, enum_values FROM segment.tracking.properties WHERE rule_type IN ('IDENTIFY', 'GROUP') ORDER BY rule_type, property_name;
+----
+GROUP	traits	employees	NULL
+GROUP	traits	name	NULL
+IDENTIFY	traits	company	NULL
+IDENTIFY	traits	company.name	NULL
+IDENTIFY	traits	email	NULL
+IDENTIFY	traits	plan	[free, pro, enterprise]
+
+query II
+SELECT count(*), count(DISTINCT tracking_plan_id) FROM segment.tracking.properties;
+----
+20	2
+
+query TT
+SELECT tracking_plan_name, source_name FROM segment.tracking.plan_sources ORDER BY ALL;
+----
+Main Tracking Plan	Website
+Main Tracking Plan	iOS App
+
+# ----------------------------------------------- shared product-analytics shape
+
+query TTTTTT
+SELECT tool, event_name, description, category, is_active, tags FROM segment.unified.event_definitions ORDER BY event_name;
+----
+segment	Order Completed	A customer completed an order	track	true	[Main Tracking Plan]
+segment	Pricing	NULL	page	true	[Main Tracking Plan]
+segment	Product Viewed	NULL	track	true	[Main Tracking Plan]
+segment	Signed Up	NULL	track	false	[Main Tracking Plan]
+
+# Only LIVE plans feed the shared definitions.
+query T
+SELECT query::JSON->>'type' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/tracking-plans') ORDER BY seq DESC LIMIT 1;
+----
+LIVE
+
+query TTTTTT
+SELECT scope, event_name, property_name, data_type, is_required, enum_values FROM segment.unified.property_definitions WHERE scope IN ('user', 'group') OR event_name = 'Order Completed' ORDER BY scope, event_name, property_name;
+----
+event	Order Completed	coupon	string	false	NULL
+event	Order Completed	currency	string	false	[USD, EUR]
+event	Order Completed	order_id	string	true	NULL
+event	Order Completed	products	array	false	NULL
+event	Order Completed	products[].price	number	false	NULL
+event	Order Completed	products[].sku	string	true	NULL
+event	Order Completed	total	number	true	NULL
+group	NULL	employees	integer	false	NULL
+group	NULL	name	string	true	NULL
+user	NULL	company	object	false	NULL
+user	NULL	company.name	string	false	NULL
+user	NULL	email	string	true	NULL
+user	NULL	plan	string	false	[free, pro, enterprise]
+
+query TI
+SELECT scope, count(*) FROM segment.unified.property_definitions GROUP BY scope ORDER BY scope;
+----
+event	11
+group	2
+user	4

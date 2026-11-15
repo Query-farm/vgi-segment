@@ -1,0 +1,158 @@
+# name: test/sql/metrics.test
+# description: event_volume and delivery_overview against the replay server: windows, chunking, groupBy and filter pushdown
+# group: [segment]
+
+require vgi
+
+require-env SEGMENT_WORKER
+
+require-env SEGMENT_FIXTURE_URL
+
+statement ok
+LOAD httpfs;
+
+statement ok
+LOAD json;
+
+statement ok
+ATTACH 'segment' (TYPE vgi, LOCATION '{SEGMENT_WORKER}');
+
+statement ok
+CREATE SECRET seg (TYPE segment, TOKEN 'test-token', BASE_URL '{SEGMENT_FIXTURE_URL}');
+
+# Fixture rates per minute: website Order Completed 1, website Product Viewed 10,
+# iOS Order Completed 2, iOS identify 3 (16 in all). Windows are relative to today
+# (UTC midnight) because Segment keeps only 30 days.
+# Today's UTC midnight as epoch seconds (no ICU in the test runner, so plain arithmetic).
+statement ok
+SET VARIABLE day0 = (floor(epoch(now()) / 86400) * 86400)::BIGINT;
+
+# ----------------------------------------------------------------- event_volume
+
+query TI
+SELECT event_name, sum(count) FROM segment.main.event_volume(start_time := to_timestamp(getvariable('day0') - 3 * 86400), end_time := to_timestamp(getvariable('day0') - 0)) GROUP BY event_name ORDER BY event_name;
+----
+Order Completed	12960
+Product Viewed	43200
+identify	12960
+
+# Only the dimension the query reads is requested.
+query TT
+SELECT query::JSON->>'groupBy', query::JSON->>'granularity' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/events/volume') ORDER BY seq DESC LIMIT 1;
+----
+eventName	DAY
+
+query II
+SELECT count(DISTINCT time), sum(count) FROM segment.main.event_volume(start_time := to_timestamp(getvariable('day0') - 3 * 86400), end_time := to_timestamp(getvariable('day0') - 0));
+----
+3	69120
+
+query T
+SELECT query::JSON->>'groupBy' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/events/volume') ORDER BY seq DESC LIMIT 1;
+----
+NULL
+
+# A source filter is sent as sourceId and adds the source dimension the SDK re-checks.
+query TI
+SELECT event_type, sum(count) FROM segment.main.event_volume(start_time := to_timestamp(getvariable('day0') - 3 * 86400), end_time := to_timestamp(getvariable('day0') - 0)) WHERE source_id = 'src_ios' GROUP BY event_type ORDER BY event_type;
+----
+identify	12960
+track	8640
+
+query TT
+SELECT query::JSON->>'sourceId.0', query::JSON->>'groupBy' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/events/volume') ORDER BY seq DESC LIMIT 1;
+----
+src_ios	source,eventType
+
+query TTI
+SELECT source_name, source_slug, sum(count) FROM segment.main.event_volume(start_time := to_timestamp(getvariable('day0') - 3 * 86400), end_time := to_timestamp(getvariable('day0') - 0)) WHERE event_name IN ('Order Completed', 'Product Viewed') AND event_type = 'track' GROUP BY ALL ORDER BY ALL;
+----
+Website	website	47520
+iOS App	ios-app	8640
+
+query TTT
+SELECT query::JSON->>'eventName.0', query::JSON->>'eventName.1', query::JSON->>'eventType.0' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/events/volume') ORDER BY seq DESC LIMIT 1;
+----
+Order Completed	Product Viewed	track
+
+# Without arguments the window comes from WHERE time bounds.
+query II
+SELECT count(DISTINCT time), sum(count) FROM segment.main.event_volume() WHERE time >= to_timestamp(getvariable('day0') - 2 * 86400) AND time < to_timestamp(getvariable('day0') - 0);
+----
+2	46080
+
+query T
+SELECT (query::JSON->>'endTime')::TIMESTAMPTZ = to_timestamp(getvariable('day0') - 0) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/events/volume') ORDER BY seq DESC LIMIT 1;
+----
+true
+
+# A WHERE bound older than the 30-day retention is clamped, not sent.
+query I
+SELECT count(DISTINCT time) BETWEEN 29 AND 31 FROM segment.main.event_volume() WHERE time >= to_timestamp(getvariable('day0') - 60 * 86400);
+----
+1
+
+# A 6-hour MINUTE window exceeds the 4-hour limit: two requests, one scan.
+statement ok
+CREATE TABLE before_min AS SELECT count(*) AS n FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/events/volume');
+
+query II
+SELECT count(DISTINCT time), sum(count) FROM segment.main.event_volume(start_time := to_timestamp(getvariable('day0') - 86400), end_time := to_timestamp(getvariable('day0') - 18 * 3600), granularity := 'MINUTE');
+----
+360	5760
+
+query I
+SELECT (SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/events/volume')) - n FROM before_min;
+----
+2
+
+# The default window is the last 7 days at DAY granularity.
+query I
+SELECT count(DISTINCT time) BETWEEN 7 AND 8 FROM segment.main.event_volume();
+----
+1
+
+# An explicit start before the retention is passed through and Segment's error surfaces.
+statement error
+SELECT count(*) FROM segment.main.event_volume(start_time := to_timestamp(getvariable('day0') - 45 * 86400), end_time := to_timestamp(getvariable('day0') - 40 * 86400));
+----
+<REGEX>:.*HTTP 422.*retention.*
+
+statement error
+SELECT count(*) FROM segment.main.event_volume(granularity := 'WEEK');
+----
+<REGEX>:.*granularity.*
+
+# ------------------------------------------------------------ delivery_overview
+
+query TII
+SELECT discard_reason, sum(count), sum(retry_count) FROM segment.main.delivery_overview('failed_delivery', 'src_web', destination_id := 'dst_amplitude', start_time := to_timestamp(getvariable('day0') - 2 * 86400), end_time := to_timestamp(getvariable('day0') - 0)) GROUP BY discard_reason ORDER BY discard_reason;
+----
+invalid_payload	8640	0
+rate_limited	5760	2880
+
+query TTT
+SELECT query::JSON->>'sourceId', query::JSON->>'destinationConfigId', query::JSON->>'groupBy' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/delivery-overview/failed-delivery') ORDER BY seq DESC LIMIT 1;
+----
+src_web	dst_amplitude	discardReason
+
+query TTI
+SELECT step, app_version, sum(count) FROM segment.main.delivery_overview('failed_delivery', 'src_web', destination_id := 'dst_ga4', start_time := to_timestamp(getvariable('day0') - 86400), end_time := to_timestamp(getvariable('day0') - 0)) GROUP BY ALL;
+----
+failed_delivery	2.1.0	7200
+
+# Source steps take no destination; the argument is ignored for them.
+query I
+SELECT sum(count) FROM segment.main.delivery_overview('successfully_received', 'src_web', destination_id := 'dst_ga4', start_time := to_timestamp(getvariable('day0') - 86400), end_time := to_timestamp(getvariable('day0') - 0));
+----
+15840
+
+statement error
+SELECT count(*) FROM segment.main.delivery_overview('failed_delivery', 'src_web');
+----
+<REGEX>:.*needs destination_id.*
+
+statement error
+SELECT count(*) FROM segment.main.delivery_overview('dropped', 'src_web');
+----
+<REGEX>:.*step.*
