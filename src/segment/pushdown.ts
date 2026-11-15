@@ -101,7 +101,8 @@ function prefixesFromRanges(cs: Constraint[]): Constraint[] {
 /** A pushed literal for a TIMESTAMPTZ column as epoch milliseconds (µs bigint, ms number, Date, ISO). */
 export function toEpochMs(v: unknown): number | undefined {
   if (typeof v === "bigint") return Number(v / 1000n);
-  if (typeof v === "number") return v;
+  // TIMESTAMPTZ arguments arrive as epoch microseconds; plain numbers below ~1e14 are milliseconds.
+  if (typeof v === "number") return Math.abs(v) > 1e14 ? Math.trunc(v / 1000) : v;
   if (v instanceof Date) return v.getTime();
   if (typeof v === "string") {
     const t = Date.parse(v);

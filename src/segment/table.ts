@@ -280,6 +280,7 @@ export function defineSegmentTable<A extends Record<string, unknown>>(spec: Segm
     argDefaults: spec.argDefaults,
     argConstraints: spec.argConstraints as never,
     filterPushdown: true,
+    projectionPushdown: true,
     // DuckDB drops pushed predicates from its plan; the SDK re-applies them exactly,
     // so translating a predicate only ever narrows what Segment returns.
     autoApplyFilters: true,

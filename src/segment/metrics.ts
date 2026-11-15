@@ -23,6 +23,8 @@ export const MAX_RANGE_MS: Record<string, number> = { MINUTE: 4 * HOUR, HOUR: 14
 /** Window used when neither arguments nor WHERE bounds give one. */
 export const DEFAULT_LOOKBACK_MS: Record<string, number> = { MINUTE: HOUR, HOUR: DAY, DAY: 7 * DAY };
 const BUCKET_MS: Record<string, number> = { MINUTE, HOUR, DAY };
+/** How far back Segment keeps each granularity. */
+export const RETENTION_MS: Record<string, number> = { MINUTE: 48 * HOUR, HOUR: 30 * DAY, DAY: 30 * DAY };
 
 interface WindowArgs {
   start_time: unknown;
@@ -38,10 +40,13 @@ export function resolveWindow<A extends WindowArgs>(scan: ScanContext<A>): { sta
   const now = Math.floor((scan.anchorMs - MINUTE) / MINUTE) * MINUTE;
   const end = toEpochMs(scan.args.end_time) ?? pushed.upper ?? now;
   let start = toEpochMs(scan.args.start_time) ?? pushed.lower ?? end - (DEFAULT_LOOKBACK_MS[g] ?? 7 * DAY);
-  // A bucket starts at a granularity boundary: align a pushed lower bound down so its bucket is included.
-  if (scan.args.start_time == null && pushed.lower !== undefined) {
+  if (scan.args.start_time == null) {
+    // Buckets start on granularity boundaries: align a derived start down so its bucket is included,
+    // but never before Segment's retention (older buckets do not exist; asking for them is a 422).
     const b = BUCKET_MS[g] ?? DAY;
     start = Math.floor(start / b) * b;
+    const oldest = scan.anchorMs - (RETENTION_MS[g] ?? 30 * DAY) + MINUTE;
+    if (start < oldest) start = Math.ceil(oldest / b) * b;
   }
   return { start, end, g };
 }
@@ -115,7 +120,7 @@ export const eventVolume: VgiFunction = defineSegmentTable<VolumeArgs>({
     "workspace total and adding event_name splits by event. Named arguments: start_time, end_time (an " +
     "inclusive/exclusive window), granularity ('DAY' default, 'HOUR', 'MINUTE'). Without arguments the window " +
     "comes from WHERE time >= … AND time < …, else the last 7 days (DAY). WHERE source_id / event_name / " +
-    "event_type = or IN are sent as API filters. Segment keeps about 30 days of volume.",
+    "event_type = or IN are sent as API filters. Segment keeps 30 days of DAY/HOUR buckets and 48 hours of MINUTE buckets; a WHERE bound older than that is clamped to the retention, an explicit start_time is not.",
   docMd:
     "## event_volume(start_time := NULL, end_time := NULL, granularity := 'DAY')\n\n" +
     "Event volume per time bucket; read dimension columns become `groupBy`.",

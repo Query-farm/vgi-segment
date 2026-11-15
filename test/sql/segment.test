@@ -1,148 +1,487 @@
 # name: test/sql/segment.test
-# description: SQL-level tests for the segment worker, run through DuckDB by ci/run-integration.sh
+# description: Control-plane tables against the offline Segment replay server (test/mock_api/server.py)
 # group: [segment]
-# managed-by: vgi-starters (edit upstream in shared/, then run tools/render.py)
 
 require vgi
 
 require-env SEGMENT_WORKER
 
-require-env SEGMENT_MOCK_API
+require-env SEGMENT_FIXTURE_URL
 
-require-env SEGMENT_MOCK_API_AUTH
+# httpfs + json read the replay server's /__requests log to assert what was pushed down.
+statement ok
+LOAD httpfs;
+
+statement ok
+LOAD json;
 
 statement ok
 ATTACH 'segment' (TYPE vgi, LOCATION '{SEGMENT_WORKER}');
 
-# ---------------------------------------------------------------- greet (scalar)
+# ---------------------------------------------------------------- secret errors
 
-query T
-SELECT segment.main.greet('Ada');
-----
-Hi, Ada!
-
-query T
-SELECT segment.main.greet('Ada', 'formal');
-----
-Good day, Ada.
-
-# NULL in, NULL out.
-query T
-SELECT segment.main.greet(NULL);
-----
-NULL
-
-# Works over a whole column, one result per row.
-query T
-SELECT segment.main.greet(name) FROM (VALUES ('Ada'), ('Grace'), (NULL)) AS t(name) ORDER BY ALL NULLS LAST;
-----
-Hi, Ada!
-Hi, Grace!
-NULL
-
-# `style` is constrained to 'casual' | 'formal' and checked when the query is bound.
-# (No expected message: each SDK words constraint errors its own way.)
 statement error
-SELECT segment.main.greet('Ada', 'loud');
+SELECT count(*) FROM segment.main.sources;
 ----
-<REGEX>:.*
+<REGEX>:.*no segment secret.*
 
-# ------------------------------------------------------ sequence_table (table fn)
+statement ok
+CREATE SECRET seg_bad (TYPE segment, TOKEN 'wrong-token', BASE_URL '{SEGMENT_FIXTURE_URL}');
 
-query II
-SELECT n, squared FROM segment.main.sequence_table(4) ORDER BY n;
+statement error
+SELECT count(*) FROM segment.main.sources;
 ----
-0	0
-1	1
-2	4
-3	9
+<REGEX>:.*HTTP 401.*unauthorized.*TOKEN and REGION.*
 
-# Named argument with a default.
+statement ok
+DROP SECRET seg_bad;
+
+statement ok
+CREATE SECRET seg_insecure (TYPE segment, TOKEN x, BASE_URL 'http://api.segmentapis.com');
+
+statement error
+SELECT count(*) FROM segment.main.sources;
+----
+<REGEX>:.*https.*
+
+statement ok
+DROP SECRET seg_insecure;
+
+statement ok
+CREATE SECRET seg_region (TYPE segment, TOKEN x, REGION 'apac');
+
+statement error
+SELECT count(*) FROM segment.main.sources;
+----
+<REGEX>:.*REGION must be 'us' or 'eu'.*
+
+statement ok
+DROP SECRET seg_region;
+
+# A workspace whose plan lacks Engage, Reverse ETL, Functions and the Audit Trail.
+statement ok
+CREATE SECRET seg_starter (TYPE segment, TOKEN 'starter-token', BASE_URL '{SEGMENT_FIXTURE_URL}');
+
 query I
-SELECT n FROM segment.main.sequence_table(3, step := 5) ORDER BY n;
+SELECT count(*) FROM segment.main.sources;
 ----
-0
 5
-10
 
-# Larger than one batch: the cursor must carry across process calls.
-query II
-SELECT count(*), max(n) FROM segment.main.sequence_table(25000);
+statement error
+SELECT count(*) FROM segment.engage.spaces;
 ----
-25000	24999
+<REGEX>:.*HTTP 403.*Engage / Unify.*
+
+statement error
+SELECT count(*) FROM segment.main.reverse_etl_models;
+----
+<REGEX>:.*HTTP 403.*Reverse ETL.*
+
+statement error
+SELECT count(*) FROM segment.main.audit_events;
+----
+<REGEX>:.*HTTP 403.*Audit Trail.*
+
+statement error
+SELECT count(*) FROM segment.main.functions;
+----
+<REGEX>:.*HTTP 403.*Functions.*
+
+statement ok
+DROP SECRET seg_starter;
+
+statement ok
+CREATE SECRET seg (TYPE segment, TOKEN 'test-token', BASE_URL '{SEGMENT_FIXTURE_URL}');
+
+# -------------------------------------------------------------------- workspace
+
+query TTT
+SELECT id, slug, name FROM segment.main.workspace;
+----
+ws_acme	acme	Acme Inc
+
+# ---------------------------------------------------------------------- sources
+
+# The replay server returns 2 items per page: 5 sources take 3 pages.
+query TTTTTI
+SELECT id, name, source_type, enabled, labels, write_key_count FROM segment.main.sources ORDER BY id;
+----
+src_ios	iOS App	ios	true	['environment:prod', 'platform:mobile']	2
+src_retl	Snowflake RETL	snowflake-retl	true	['environment:prod']	0
+src_server	Backend	http-api	true	['environment:dev']	1
+src_stripe	Stripe	stripe	false	[]	0
+src_web	Website	javascript	true	['environment:prod']	1
 
 query I
-SELECT count(*) FROM segment.main.sequence_table(0);
+SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/sources') WHERE status = 200 AND query LIKE '%"pagination.count": "200"%' AND query LIKE '%pagination.cursor%';
+----
+4
+
+# Secret settings are redacted; a known write key is scrubbed even inside free text.
+query TTT
+SELECT id, settings, masked_settings FROM segment.main.sources WHERE id IN ('src_ios', 'src_stripe', 'src_retl') ORDER BY id;
+----
+src_ios	{"note":"rotated key <redacted> in October"}	[]
+src_retl	{"account":"acme.us-east-1","privateKey":"<redacted>"}	[privateKey]
+src_stripe	{"apiKey":"<redacted>","syncMode":"incremental"}	[apiKey]
+
+# WHERE id = / IN pushes down to GET /sources/{id}.
+query T
+SELECT path FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/sources/src_stripe') ORDER BY seq DESC LIMIT 1;
+----
+/sources/src_stripe
+
+query T
+SELECT name FROM segment.main.sources WHERE id = 'src_nope';
+----
+
+query T
+SELECT name FROM segment.main.sources WHERE list_contains(labels, 'platform:mobile');
+----
+iOS App
+
+# ------------------------------------------------- planted secrets never leak
+
+query I
+SELECT count(*) FROM segment.main.sources s WHERE s::VARCHAR LIKE '%PLANTED%';
 ----
 0
 
-# count is constrained to [0, 1000000].
-statement error
-SELECT * FROM segment.main.sequence_table(-1);
+query I
+SELECT count(*) FROM segment.main.destinations d WHERE d::VARCHAR LIKE '%PLANTED%';
 ----
-<REGEX>:.*
-
-# Named arguments are constrained too: step >= 1.
-statement error
-SELECT * FROM segment.main.sequence_table(3, step := 0);
-----
-<REGEX>:.*
-
-# ------------------------------------------------- fetch_items (REST table fn)
-
-query IIT
-SELECT count(*), sum(id), min(name) FROM segment.main.fetch_items('{SEGMENT_MOCK_API}', page_size := 4);
-----
-25	325	item-01
-
-query TI
-SELECT category, count(*) FROM segment.main.fetch_items('{SEGMENT_MOCK_API}') GROUP BY category ORDER BY category;
-----
-hardware	8
-service	8
-software	9
-
-# The harness runs SEGMENT_MOCK_API with MOCK_API_FLAKY=1: every page answers
-# 429 + Retry-After once, so every query above also exercised the retry path.
-
-# SEGMENT_MOCK_API_AUTH requires a bearer token ('test-token'). Every language's
-# fetch_items must put the HTTP status code in its error message.
-statement error
-SELECT count(*) FROM segment.main.fetch_items('{SEGMENT_MOCK_API_AUTH}');
-----
-401
-
-statement ok
-CREATE SECRET segment_api_test (TYPE segment_api, TOKEN 'test-token');
+0
 
 query I
-SELECT count(*) FROM segment.main.fetch_items('{SEGMENT_MOCK_API_AUTH}', page_size := 25);
+SELECT count(*) FROM segment.main.warehouses w WHERE w::VARCHAR LIKE '%PLANTED%';
 ----
-25
+0
 
-# Several pages: the token must survive between batches (over HTTP each batch is a
-# separate request, so a token kept only in memory is lost after page 1).
 query I
-SELECT count(*) FROM segment.main.fetch_items('{SEGMENT_MOCK_API_AUTH}', page_size := 7);
+SELECT count(*) FROM segment.main.destination_subscriptions d WHERE d::VARCHAR LIKE '%PLANTED%';
 ----
-25
+0
 
+query I
+SELECT count(*) FROM segment.main.connections c WHERE c::VARCHAR LIKE '%PLANTED%';
+----
+0
+
+query I
+SELECT count(*) FROM segment.tracking.plan_sources p WHERE p::VARCHAR LIKE '%PLANTED%';
+----
+0
+
+# ---------------------------------------------------------- source settings
+
+query TTTTT
+SELECT source_id, source_name, track_allow_unplanned_events, track_common_event_on_violations, forwarding_violations_to FROM segment.main.source_schema_settings ORDER BY source_id;
+----
+src_ios	iOS App	true	ALLOW	NULL
+src_retl	Snowflake RETL	NULL	NULL	NULL
+src_server	Backend	NULL	NULL	NULL
+src_stripe	Stripe	NULL	NULL	NULL
+src_web	Website	false	OMIT_PROPERTIES	src_server
+
+query TT
+SELECT source_id, identify_common_event_on_violations FROM segment.main.source_schema_settings WHERE source_id = 'src_web';
+----
+src_web	ALLOW
+
+# ----------------------------------------------------------------- destinations
+
+query TTTTT
+SELECT id, name, destination_type, source_id, is_actions FROM segment.main.destinations ORDER BY id;
+----
+dst_amplitude	Amplitude (Prod)	actions-amplitude	src_web	true
+dst_braze	Braze (RETL)	braze-cloud-plugins	src_retl	true
+dst_ga4	GA4	google-analytics-4-web	src_web	false
+dst_webhook	Ops Webhook	webhooks	src_server	false
+
+query TT
+SELECT settings, masked_settings FROM segment.main.destinations WHERE id = 'dst_webhook';
+----
+{"webhookUrl":"https://<redacted>@hooks.example.com/segment","headers":{"Authorization":"<redacted>"},"sharedSecret":"<redacted>"}	[headers.Authorization, sharedSecret]
+
+# WHERE source_id = uses the source's connected-destinations endpoint.
 statement ok
-DROP SECRET segment_api_test;
+CREATE TABLE before_sd AS SELECT count(*) AS n FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/sources/src_web/connected-destinations');
 
-# base_url must be http(s).
-statement error
-SELECT * FROM segment.main.fetch_items('ftp://example.com');
+query T
+SELECT id FROM segment.main.destinations WHERE source_id = 'src_web' ORDER BY id;
 ----
-<REGEX>:.*
+dst_amplitude
+dst_ga4
 
-# page_size is a named argument constrained to [1, 1000].
-statement error
-SELECT * FROM segment.main.fetch_items('{SEGMENT_MOCK_API}', page_size := 0);
+query I
+SELECT (SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/sources/src_web/connected-destinations')) - n FROM before_sd;
 ----
-<REGEX>:.*
+1
 
-statement error
-SELECT * FROM segment.main.fetch_items('{SEGMENT_MOCK_API}', page_size := 5000);
+query TTTTT
+SELECT destination_id, id, action_slug, model_id, schedule_strategy FROM segment.main.destination_subscriptions ORDER BY destination_id, id;
 ----
-<REGEX>:.*
+dst_amplitude	sub_amp_identify	identifyUser	NULL	NULL
+dst_amplitude	sub_amp_track	logEvent	NULL	NULL
+dst_braze	sub_braze_churn	updateUserProfile	mdl_churn	MANUAL
+dst_braze	sub_braze_ltv	updateUserProfile	mdl_ltv	PERIODIC
+
+query TT
+SELECT id, trigger FROM segment.main.destination_subscriptions WHERE destination_id = 'dst_amplitude' AND enabled;
+----
+sub_amp_track	type = "track"
+
+# ------------------------------------------------------------------ connections
+
+query TTTTT
+SELECT source_id, source_name, target_type, target_id, target_name FROM segment.main.connections ORDER BY ALL;
+----
+src_ios	iOS App	warehouse	wh_snow	Snowflake Prod
+src_retl	Snowflake RETL	destination	dst_braze	Braze (RETL)
+src_server	Backend	destination	dst_webhook	Ops Webhook
+src_server	Backend	warehouse	wh_bq	BigQuery Analytics
+src_web	Website	destination	dst_amplitude	Amplitude (Prod)
+src_web	Website	destination	dst_ga4	GA4
+src_web	Website	warehouse	wh_snow	Snowflake Prod
+
+# target_type = 'warehouse' skips the destination calls.
+statement ok
+CREATE TABLE before_cd AS SELECT count(*) AS n FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/sources/src_server/connected-destinations');
+
+query TT
+SELECT source_id, target_id FROM segment.main.connections WHERE target_type = 'warehouse' AND source_id = 'src_server';
+----
+src_server	wh_bq
+
+query I
+SELECT (SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/sources/src_server/connected-destinations')) - n FROM before_cd;
+----
+0
+
+query T
+SELECT s.name FROM segment.main.sources s ANTI JOIN segment.main.connections c ON c.source_id = s.id ORDER BY s.name;
+----
+Stripe
+
+# ------------------------------------------------------------------- warehouses
+
+query TTTT
+SELECT id, name, warehouse_type, connection_state FROM segment.main.warehouses ORDER BY id;
+----
+wh_bq	BigQuery Analytics	bigquery	FAILED
+wh_snow	Snowflake Prod	snowflake	CONNECTED
+
+query TT
+SELECT settings, masked_settings FROM segment.main.warehouses WHERE id = 'wh_snow';
+----
+{"name":"Snowflake Prod","account":"acme.us-east-1","database":"SEGMENT_EVENTS","user":"SEGMENT","password":"<redacted>"}	[password]
+
+# connection_state is fetched only when read.
+statement ok
+CREATE TABLE before_cs AS SELECT count(*) AS n FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/warehouses/wh_bq/connection-state');
+
+query T
+SELECT name FROM segment.main.warehouses WHERE id = 'wh_bq';
+----
+BigQuery Analytics
+
+query I
+SELECT (SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/warehouses/wh_bq/connection-state')) - n FROM before_cs;
+----
+0
+
+query TTTTRTIT
+SELECT warehouse_id, warehouse_name, source_id, status, duration_seconds, human_duration, rows_synced, error_message FROM segment.main.warehouse_syncs ORDER BY warehouse_id, started_at, source_id;
+----
+wh_bq	BigQuery Analytics	src_server	SUCCESS	120.0	2m	5000	NULL
+wh_bq	BigQuery Analytics	src_server	RUNNING	30.0	30s	100	NULL
+wh_snow	Snowflake Prod	src_ios	FAILED	60.0	1m	0	permission denied for schema IOS_APP
+wh_snow	Snowflake Prod	src_web	SUCCESS	270.0	4m 30s	120000	NULL
+wh_snow	Snowflake Prod	src_web	SUCCESS	180.0	3m	80000	NULL
+
+query TT
+SELECT started_at, ended_at FROM segment.main.warehouse_syncs WHERE warehouse_id = 'wh_bq' AND status = 'RUNNING';
+----
+2026-11-12 03:00:00+00	NULL
+
+# warehouse_id + source_id use the per-source sync endpoint.
+query I
+SELECT sum(rows_synced) FROM segment.main.warehouse_syncs WHERE warehouse_id = 'wh_snow' AND source_id = 'src_web';
+----
+200000
+
+query I
+SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/warehouses/wh_snow/connected-sources/src_web/syncs');
+----
+1
+
+# -------------------------------------------------------------------- functions
+
+query TTT
+SELECT id, resource_type, display_name FROM segment.main.functions ORDER BY id;
+----
+dfn_enrich	DESTINATION	Enrich Leads
+ifnd_scrub	INSERT_DESTINATION	Scrub PII
+sfn_typeform	SOURCE	Typeform Webhook
+
+# resource_type pushes down: one request instead of five.
+statement ok
+CREATE TABLE before_fn AS SELECT count(*) AS n FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/functions');
+
+query T
+SELECT id FROM segment.main.functions WHERE resource_type = 'SOURCE';
+----
+sfn_typeform
+
+query I
+SELECT (SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/functions')) - n FROM before_fn;
+----
+1
+
+# Code is opt-in through function_code.
+query TTIT
+SELECT id, display_name, (length(code) > 0)::INT, settings->>'$[0].sensitive' FROM segment.main.function_code('dfn_enrich');
+----
+dfn_enrich	Enrich Leads	1	true
+
+query I
+SELECT count(*) FROM segment.main.function_code('dfn_missing');
+----
+0
+
+# ----------------------------------------------------------------------- labels
+
+# The first /labels request answers 503; the client retries.
+query TTT
+SELECT key, value, description FROM segment.main.labels ORDER BY key, value;
+----
+environment	dev	Development traffic
+environment	prod	Production traffic
+platform	mobile	NULL
+
+query I
+SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/labels') WHERE status = 503;
+----
+1
+
+# ------------------------------------------------------------------ audit trail
+
+query TTT
+SELECT id, type, actor_email FROM segment.main.audit_events WHERE timestamp >= TIMESTAMPTZ '2026-11-01 00:00:00+00' AND timestamp < TIMESTAMPTZ '2026-11-09 00:00:00+00' AND resource_type = 'destination' ORDER BY timestamp;
+----
+ae_2	Destination Modified	grace@acme.com
+ae_3	Destination Disabled	ada@acme.com
+
+query TTTT
+SELECT query::JSON->>'startTime', query::JSON->>'endTime', query::JSON->>'resourceType', query::JSON->>'resourceId' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/audit-events') ORDER BY seq DESC LIMIT 1;
+----
+2026-11-01T00:00:00.000Z	2026-11-09T00:00:00.000Z	destination	NULL
+
+query I
+SELECT count(*) FROM segment.main.audit_events WHERE resource_id = 'wh_bq';
+----
+1
+
+query T
+SELECT query::JSON->>'resourceId' FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/audit-events') ORDER BY seq DESC LIMIT 1;
+----
+wh_bq
+
+# ------------------------------------------------------------------ Reverse ETL
+
+query TTTT
+SELECT id, name, enabled, query_identifier_column FROM segment.main.reverse_etl_models ORDER BY id;
+----
+mdl_churn	Churn Risk	false	user_id
+mdl_ltv	Customer LTV	true	user_id
+
+query TTTTIII
+SELECT subscription_id, sync_id, status, error_code, extract_count, delivered_count, failed_count FROM segment.main.reverse_etl_syncs ORDER BY sync_id;
+----
+sub_braze_ltv	rsync_1	SUCCESS	NULL	200	200	0
+sub_braze_ltv	rsync_2	PARTIAL_SUCCESS	NULL	100	95	5
+sub_braze_ltv	rsync_3	FAIL	QUERY_TIMEOUT	0	0	0
+sub_braze_churn	rsync_9	IN_PROGRESS	NULL	50	NULL	NULL
+
+# model_id + subscription_id read that mapping directly, with count/cursor paging.
+query I
+SELECT count(*) FROM segment.main.reverse_etl_syncs WHERE model_id = 'mdl_ltv' AND subscription_id = 'sub_braze_ltv';
+----
+3
+
+query I
+SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests?path=/reverse-etl-models/mdl_ltv/subscriptionId/sub_braze_ltv/syncs') WHERE query LIKE '%"count": "100"%' AND query LIKE '%"cursor"%';
+----
+2
+
+# ----------------------------------------------------------------------- engage
+
+query TTT
+SELECT id, slug, name FROM segment.engage.spaces;
+----
+spa_prod	production	Production
+
+query TTITT
+SELECT space_id, name, size, compute_cadence, audience_type FROM segment.engage.audiences ORDER BY size DESC;
+----
+spa_prod	High Value	1200	REALTIME	USERS
+spa_prod	Churn Risk	340	BATCH	USERS
+
+query TTTT
+SELECT id, key, definition_type, include_historical_data FROM segment.engage.computed_traits WHERE space_id = 'spa_prod' ORDER BY id;
+----
+ct_last_order	last_order_at	USERS	false
+ct_ltv	ltv	USERS	true
+
+# -------------------------------------------------------------------------- iam
+
+query T
+SELECT email FROM segment.iam.users WHERE list_contains(role_names, 'Workspace Owner') ORDER BY email;
+----
+ada@acme.com
+linus@acme.com
+
+query TIT
+SELECT name, member_count, role_names FROM segment.iam.user_groups ORDER BY name;
+----
+Data Team	4	[Workspace Member]
+Mobile	2	[Source Admin]
+
+query I
+SELECT count(*) FROM segment.iam.roles;
+----
+4
+
+# ---------------------------------------------------------------------- unified
+
+query TTTTTTR
+SELECT orchestrator, run_id, pipeline, status, raw_status, trigger, duration_seconds FROM segment.unified.runs ORDER BY run_id;
+----
+segment	rsync_1	reverse_etl/mdl_ltv/sub_braze_ltv	success	SUCCESS	schedule	60.0
+segment	rsync_2	reverse_etl/mdl_ltv/sub_braze_ltv	failed	PARTIAL_SUCCESS	schedule	120.0
+segment	rsync_3	reverse_etl/mdl_ltv/sub_braze_ltv	failed	FAIL	schedule	45.0
+segment	rsync_9	reverse_etl/mdl_churn/sub_braze_churn	running	IN_PROGRESS	manual	NULL
+segment	warehouse:wh_bq:src_server:2026-11-11T03:00:00Z	warehouse/wh_bq/src_server	success	SUCCESS	schedule	120.0
+segment	warehouse:wh_bq:src_server:2026-11-12T03:00:00Z	warehouse/wh_bq/src_server	running	RUNNING	schedule	30.0
+segment	warehouse:wh_snow:src_ios:2026-11-10T02:00:00Z	warehouse/wh_snow/src_ios	failed	FAILED	schedule	60.0
+segment	warehouse:wh_snow:src_web:2026-11-10T02:00:00Z	warehouse/wh_snow/src_web	success	SUCCESS	schedule	270.0
+segment	warehouse:wh_snow:src_web:2026-11-11T02:00:00Z	warehouse/wh_snow/src_web	success	SUCCESS	schedule	180.0
+
+query I
+SELECT count(*) FROM segment.unified.runs WHERE ended_at IS NULL;
+----
+2
+
+query TTIT
+SELECT tool, name, size, definition->>'computeCadence' FROM segment.unified.cohorts ORDER BY size DESC;
+----
+segment	High Value	1200	REALTIME
+segment	Churn Risk	340	BATCH
+
+# --------------------------------------------------------------------- read-only
+
+# Every request the worker made was a GET (the replay server answers 405 otherwise).
+query I
+SELECT count(*) FROM read_json('{SEGMENT_FIXTURE_URL}/__requests') WHERE status = 405;
+----
+0

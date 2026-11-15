@@ -1,0 +1,207 @@
+{
+  "_comment": "Hand-built Segment workspace in documented Public API response shapes (segmentio/public-api-sdk-typescript models). Every value containing PLANTED is a fake secret that must never reach SQL.",
+  "workspace": {"id": "ws_acme", "slug": "acme", "name": "Acme Inc"},
+  "labels": [
+    {"key": "environment", "value": "prod", "description": "Production traffic"},
+    {"key": "environment", "value": "dev", "description": "Development traffic"},
+    {"key": "platform", "value": "mobile", "description": null}
+  ],
+  "sources": [
+    {"id": "src_web", "slug": "website", "name": "Website", "workspaceId": "ws_acme", "enabled": true,
+     "writeKeys": ["wkPLANTEDweb9f8e7d6c5b"],
+     "settings": {"trackedDomain": "acme.com", "corsOrigins": ["https://acme.com"]},
+     "labels": [{"key": "environment", "value": "prod"}],
+     "metadata": {"id": "IqDTy1TpoU", "name": "Javascript", "slug": "javascript", "description": "Analytics.js", "categories": ["Website"], "isCloudEventSource": false, "logos": {"default": "https://cdn.segment.com/javascript.svg"}, "options": []}},
+    {"id": "src_ios", "slug": "ios-app", "name": "iOS App", "workspaceId": "ws_acme", "enabled": true,
+     "writeKeys": ["wkPLANTEDios1a2b3c4d5e", "wkPLANTEDios2rotated99"],
+     "settings": {"note": "rotated key wkPLANTEDios2rotated99 in October"},
+     "labels": [{"key": "environment", "value": "prod"}, {"key": "platform", "value": "mobile"}],
+     "metadata": {"id": "6IhKnMdKiq", "name": "iOS", "slug": "ios", "categories": ["Mobile"], "isCloudEventSource": false, "options": []}},
+    {"id": "src_server", "slug": "backend", "name": "Backend", "workspaceId": "ws_acme", "enabled": true,
+     "writeKeys": ["wkPLANTEDsrvaa11bb22cc"],
+     "settings": {},
+     "labels": [{"key": "environment", "value": "dev"}],
+     "metadata": {"id": "xE6b6CnfVd", "name": "HTTP API", "slug": "http-api", "categories": ["Server"], "isCloudEventSource": false, "options": []}},
+    {"id": "src_stripe", "slug": "stripe", "name": "Stripe", "workspaceId": "ws_acme", "enabled": false,
+     "writeKeys": [],
+     "settings": {"apiKey": "sk_live_PLANTED_stripe_secret", "syncMode": "incremental"},
+     "labels": [],
+     "metadata": {"id": "ARsU3xGVjn", "name": "Stripe", "slug": "stripe", "categories": ["Payments"], "isCloudEventSource": true, "options": []}},
+    {"id": "src_retl", "slug": "snowflake-retl", "name": "Snowflake RETL", "workspaceId": "ws_acme", "enabled": true,
+     "writeKeys": [],
+     "settings": {"account": "acme.us-east-1", "privateKey": "-----BEGIN PRIVATE KEY-----PLANTEDretlkey"},
+     "labels": [{"key": "environment", "value": "prod"}],
+     "metadata": {"id": "snowretl01", "name": "Snowflake (Reverse ETL)", "slug": "snowflake-retl", "categories": ["Reverse ETL"], "isCloudEventSource": false, "options": []}}
+  ],
+  "source_settings": {
+    "src_web": {"track": {"allowUnplannedEvents": false, "allowUnplannedEventProperties": false, "allowEventOnViolations": true, "allowPropertiesOnViolations": false, "commonEventOnViolations": "OMIT_PROPERTIES"},
+                "identify": {"allowUnplannedTraits": false, "allowTraitsOnViolations": true, "commonEventOnViolations": "ALLOW"},
+                "group": {"allowUnplannedTraits": true, "allowTraitsOnViolations": true, "commonEventOnViolations": "ALLOW"},
+                "forwardingViolationsTo": "src_server", "forwardingBlockedEventsTo": "src_server"},
+    "src_ios": {"track": {"allowUnplannedEvents": true, "allowUnplannedEventProperties": true, "allowEventOnViolations": true, "allowPropertiesOnViolations": true, "commonEventOnViolations": "ALLOW"},
+                "identify": {"allowUnplannedTraits": true, "allowTraitsOnViolations": true, "commonEventOnViolations": "ALLOW"},
+                "group": {"allowUnplannedTraits": true, "allowTraitsOnViolations": true, "commonEventOnViolations": "ALLOW"}}
+  },
+  "destinations": [
+    {"id": "dst_amplitude", "name": "Amplitude (Prod)", "enabled": true, "sourceId": "src_web",
+     "settings": {"apiKey": "ampPLANTEDapikey123", "secretKey": "ampPLANTEDsecret456", "endpoint": "north_america"},
+     "metadata": {"id": "5f7dd6d21ad74f3842b1fc47", "name": "Amplitude (Actions)", "slug": "actions-amplitude", "categories": ["Analytics"], "actions": [{"id": "act1", "slug": "logEvent", "name": "Log Event"}], "options": []}},
+    {"id": "dst_ga4", "name": "GA4", "enabled": true, "sourceId": "src_web",
+     "settings": {"measurementId": "G-ACME123", "apiSecret": "gaPLANTEDsecret"},
+     "metadata": {"id": "60ad61f9ff47a16b8fb7b5d9", "name": "Google Analytics 4 Web", "slug": "google-analytics-4-web", "categories": ["Analytics"], "actions": [], "options": []}},
+    {"id": "dst_webhook", "name": "Ops Webhook", "enabled": false, "sourceId": "src_server",
+     "settings": {"webhookUrl": "https://ops:PLANTEDpass@hooks.example.com/segment", "headers": {"Authorization": "Bearer PLANTEDhdrtoken"}, "sharedSecret": "PLANTEDshared"},
+     "metadata": {"id": "5d2e3b8f2b5f4a0001a1b2c3", "name": "Webhooks", "slug": "webhooks", "categories": ["Raw Data"], "actions": [], "options": []}},
+    {"id": "dst_braze", "name": "Braze (RETL)", "enabled": true, "sourceId": "src_retl",
+     "settings": {"apiKey": "brazePLANTEDkey", "endpoint": "https://rest.iad-01.braze.com"},
+     "metadata": {"id": "60f9d0d048950c356be2e4da", "name": "Braze Cloud Mode (Actions)", "slug": "braze-cloud-plugins", "categories": ["Marketing Automation"], "actions": [{"id": "act2", "slug": "updateUserProfile", "name": "Update User Profile"}], "options": []}}
+  ],
+  "subscriptions": {
+    "dst_amplitude": [
+      {"id": "sub_amp_track", "name": "Track Calls", "actionId": "act1", "actionSlug": "logEvent", "destinationId": "dst_amplitude", "enabled": true, "trigger": "type = \"track\"", "settings": {"event_type": {"@path": "$.event"}}},
+      {"id": "sub_amp_identify", "name": "Identify Calls", "actionId": "act1", "actionSlug": "identifyUser", "destinationId": "dst_amplitude", "enabled": false, "trigger": "type = \"identify\"", "settings": {}}
+    ],
+    "dst_braze": [
+      {"id": "sub_braze_ltv", "name": "Sync LTV", "actionId": "act2", "actionSlug": "updateUserProfile", "destinationId": "dst_braze", "enabled": true, "trigger": "event = \"new\"", "modelId": "mdl_ltv",
+       "reverseETLSchedule": {"strategy": "PERIODIC", "config": {"interval": "1h"}}, "settings": {"external_id": {"@path": "$.properties.user_id"}}},
+      {"id": "sub_braze_churn", "name": "Sync churn risk", "actionId": "act2", "actionSlug": "updateUserProfile", "destinationId": "dst_braze", "enabled": true, "trigger": "event = \"updated\"", "modelId": "mdl_churn",
+       "reverseETLSchedule": {"strategy": "MANUAL", "config": null}, "settings": {}}
+    ]
+  },
+  "warehouses": [
+    {"id": "wh_snow", "workspaceId": "ws_acme", "enabled": true,
+     "settings": {"name": "Snowflake Prod", "account": "acme.us-east-1", "database": "SEGMENT_EVENTS", "user": "SEGMENT", "password": "PLANTEDsnowpw"},
+     "metadata": {"id": "snowflake01", "name": "Snowflake", "slug": "snowflake", "description": "Snowflake", "options": []},
+     "connectionState": "CONNECTED", "sources": ["src_web", "src_ios"]},
+    {"id": "wh_bq", "workspaceId": "ws_acme", "enabled": true,
+     "settings": {"name": "BigQuery Analytics", "project": "acme-analytics", "credentials": "{\"type\":\"service_account\",\"private_key\":\"-----BEGIN PRIVATE KEY-----PLANTEDbq\"}"},
+     "metadata": {"id": "bigquery01", "name": "BigQuery", "slug": "bigquery", "options": []},
+     "connectionState": "FAILED", "sources": ["src_server"]}
+  ],
+  "syncs": {
+    "wh_snow": [
+      {"sourceId": "src_web", "start": "2026-11-10T02:00:00Z", "end": "2026-11-10T02:04:30Z", "status": "SUCCESS", "duration": 270, "humanDuration": "4m 30s", "count": 120000, "notices": []},
+      {"sourceId": "src_ios", "start": "2026-11-10T02:00:00Z", "end": "2026-11-10T02:01:00Z", "status": "FAILED", "duration": 60, "humanDuration": "1m", "count": 0,
+       "notices": [{"level": "warning", "message": "slow query", "createdAt": "2026-11-10T02:00:30Z"}, {"level": "error", "message": "permission denied for schema IOS_APP", "createdAt": "2026-11-10T02:01:00Z"}]},
+      {"sourceId": "src_web", "start": "2026-11-11T02:00:00Z", "end": "2026-11-11T02:03:00Z", "status": "SUCCESS", "duration": 180, "humanDuration": "3m", "count": 80000, "notices": []}
+    ],
+    "wh_bq": [
+      {"sourceId": "src_server", "start": "2026-11-11T03:00:00Z", "end": "2026-11-11T03:02:00Z", "status": "SUCCESS", "duration": 120, "humanDuration": "2m", "count": 5000, "notices": []},
+      {"sourceId": "src_server", "start": "2026-11-12T03:00:00Z", "end": null, "status": "RUNNING", "duration": 30, "humanDuration": "30s", "count": 100, "notices": []}
+    ]
+  },
+  "functions": [
+    {"id": "dfn_enrich", "resourceType": "DESTINATION", "displayName": "Enrich Leads", "description": "Adds firmographics", "createdAt": "2026-06-01T10:00:00Z", "createdBy": "usr_ada", "logoUrl": null, "catalogId": "cat_dfn_enrich",
+     "code": "async function onTrack(event, settings) {\n  return fetch('https://enrich.example.com', { headers: { key: settings.apiKey } });\n}\n", "deployedAt": "2026-06-02T10:00:00Z", "isLatestVersion": true, "batchMaxCount": 0,
+     "settings": [{"name": "apiKey", "label": "API Key", "description": "Enrichment key", "type": "STRING", "required": true, "sensitive": true}]},
+    {"id": "sfn_typeform", "resourceType": "SOURCE", "displayName": "Typeform Webhook", "description": "Turns Typeform webhooks into identify calls", "createdAt": "2026-05-01T10:00:00Z", "createdBy": "usr_grace", "catalogId": "cat_sfn_typeform",
+     "code": "async function onRequest(request, settings) { Segment.identify({ userId: 'x' }) }\n", "deployedAt": "2026-05-01T10:00:00Z", "isLatestVersion": true, "batchMaxCount": 0, "settings": []},
+    {"id": "ifnd_scrub", "resourceType": "INSERT_DESTINATION", "displayName": "Scrub PII", "description": "Removes emails before delivery", "createdAt": "2026-07-01T10:00:00Z", "createdBy": "usr_ada", "catalogId": "cat_ifnd_scrub",
+     "code": "async function onTrack(event) { delete event.properties.email; return event }\n", "deployedAt": "2026-07-01T10:00:00Z", "isLatestVersion": false, "batchMaxCount": 0, "settings": []}
+  ],
+  "audit_events": [
+    {"id": "ae_1", "timestamp": "2026-10-28T09:00:00Z", "type": "Source Created", "actor": "usr_ada", "actorEmail": "ada@acme.com", "resourceId": "src_stripe", "resourceType": "source", "resourceName": "Stripe"},
+    {"id": "ae_2", "timestamp": "2026-11-02T10:00:00Z", "type": "Destination Modified", "actor": "usr_grace", "actorEmail": "grace@acme.com", "resourceId": "dst_amplitude", "resourceType": "destination", "resourceName": "Amplitude (Prod)"},
+    {"id": "ae_3", "timestamp": "2026-11-03T11:00:00Z", "type": "Destination Disabled", "actor": "usr_ada", "actorEmail": "ada@acme.com", "resourceId": "dst_webhook", "resourceType": "destination", "resourceName": "Ops Webhook"},
+    {"id": "ae_4", "timestamp": "2026-11-05T12:00:00Z", "type": "Warehouse Modified", "actor": "tok_ci", "actorEmail": null, "resourceId": "wh_bq", "resourceType": "warehouse", "resourceName": "BigQuery Analytics"},
+    {"id": "ae_5", "timestamp": "2026-11-09T13:00:00Z", "type": "Destination Modified", "actor": "usr_ada", "actorEmail": "ada@acme.com", "resourceId": "dst_ga4", "resourceType": "destination", "resourceName": "GA4"}
+  ],
+  "reverse_etl_models": [
+    {"id": "mdl_ltv", "sourceId": "src_retl", "name": "Customer LTV", "description": "Lifetime value per user", "enabled": true, "query": "SELECT user_id, ltv FROM analytics.ltv", "queryIdentifierColumn": "user_id"},
+    {"id": "mdl_churn", "sourceId": "src_retl", "name": "Churn Risk", "description": null, "enabled": false, "query": "SELECT user_id, risk FROM ml.churn", "queryIdentifierColumn": "user_id"}
+  ],
+  "reverse_etl_syncs": {
+    "mdl_ltv/sub_braze_ltv": [
+      {"syncId": "rsync_3", "modelId": "mdl_ltv", "sourceId": "src_retl", "syncStatus": "FAIL", "duration": "45s", "startedAt": "2026-11-12T01:00:00Z", "finishedAt": "2026-11-12T01:00:45Z",
+       "extractPhase": {"addedCount": "0", "updatedCount": "0", "deletedCount": "0", "extractCount": "0"}, "loadPhase": {"deliverSuccessCount": "0", "deliverFailureCount": "0"}, "error": "warehouse query timed out", "errorCode": "QUERY_TIMEOUT"},
+      {"syncId": "rsync_2", "modelId": "mdl_ltv", "sourceId": "src_retl", "syncStatus": "PARTIAL_SUCCESS", "duration": "2m", "startedAt": "2026-11-11T01:00:00Z", "finishedAt": "2026-11-11T01:02:00Z",
+       "extractPhase": {"addedCount": "10", "updatedCount": "90", "deletedCount": "0", "extractCount": "100"}, "loadPhase": {"deliverSuccessCount": "95", "deliverFailureCount": "5"}},
+      {"syncId": "rsync_1", "modelId": "mdl_ltv", "sourceId": "src_retl", "syncStatus": "SUCCESS", "duration": "1m", "startedAt": "2026-11-10T01:00:00Z", "finishedAt": "2026-11-10T01:01:00Z",
+       "extractPhase": {"addedCount": "200", "updatedCount": "0", "deletedCount": "0", "extractCount": "200"}, "loadPhase": {"deliverSuccessCount": "200", "deliverFailureCount": "0"}}
+    ],
+    "mdl_churn/sub_braze_churn": [
+      {"syncId": "rsync_9", "modelId": "mdl_churn", "sourceId": "src_retl", "syncStatus": "IN_PROGRESS", "duration": "10s", "startedAt": "2026-11-12T05:00:00Z",
+       "extractPhase": {"extractCount": "50"}, "loadPhase": {}}
+    ]
+  },
+  "tracking_plans": [
+    {"id": "tp_main", "name": "Main Tracking Plan", "slug": "main", "description": "Production plan", "type": "LIVE", "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-11-01T00:00:00Z", "sources": ["src_web", "src_ios"],
+     "rules": [
+       {"type": "TRACK", "key": "Order Completed", "version": 2, "createdAt": "2026-01-02T00:00:00Z", "updatedAt": "2026-10-01T00:00:00Z", "deprecatedAt": null,
+        "jsonSchema": {"$schema": "http://json-schema.org/draft-07/schema#", "type": "object", "description": "A customer completed an order",
+          "properties": {
+            "properties": {"type": "object", "required": ["order_id", "total"], "properties": {
+              "order_id": {"type": ["string"], "description": "Order id"},
+              "total": {"type": "number", "minimum": 0, "description": "Order total"},
+              "currency": {"type": "string", "enum": ["USD", "EUR"]},
+              "coupon": {"type": ["string", "null"]},
+              "products": {"type": "array", "items": {"type": "object", "required": ["sku"], "properties": {"sku": {"type": "string", "pattern": "^[A-Z0-9-]+$"}, "price": {"type": "number"}}}}
+            }},
+            "context": {"type": "object", "properties": {"ip": {"type": "string", "format": "ipv4"}}}
+          }, "required": ["properties"]}},
+       {"type": "TRACK", "key": "Product Viewed", "version": 1, "createdAt": "2026-01-02T00:00:00Z", "updatedAt": "2026-01-02T00:00:00Z", "deprecatedAt": null,
+        "jsonSchema": {"type": "object", "properties": {"properties": {"type": "object", "required": ["product_id"], "properties": {"product_id": {"type": "string"}, "category": {"type": "string", "maxLength": 64}}}}}},
+       {"type": "TRACK", "key": "Signed Up", "version": 1, "createdAt": "2026-01-02T00:00:00Z", "updatedAt": "2026-03-01T00:00:00Z", "deprecatedAt": "2026-03-01T00:00:00Z",
+        "jsonSchema": {"type": "object", "properties": {"properties": {"type": "object", "properties": {"method": {"type": "string", "enum": ["email", "google"]}}}}}},
+       {"type": "IDENTIFY", "key": "", "version": 3, "createdAt": "2026-01-02T00:00:00Z", "updatedAt": "2026-09-01T00:00:00Z", "deprecatedAt": null,
+        "jsonSchema": {"type": "object", "properties": {"traits": {"type": "object", "required": ["email"], "properties": {
+          "email": {"type": "string", "format": "email"},
+          "plan": {"type": "string", "enum": ["free", "pro", "enterprise"]},
+          "company": {"type": "object", "properties": {"name": {"type": "string"}}}}}}}},
+       {"type": "GROUP", "key": "", "version": 1, "createdAt": "2026-01-02T00:00:00Z", "updatedAt": "2026-01-02T00:00:00Z", "deprecatedAt": null,
+        "jsonSchema": {"type": "object", "properties": {"traits": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "employees": {"type": "integer", "minimum": 1}}}}}},
+       {"type": "PAGE", "key": "Pricing", "version": 1, "createdAt": "2026-01-02T00:00:00Z", "updatedAt": "2026-01-02T00:00:00Z", "deprecatedAt": null,
+        "jsonSchema": {"type": "object", "properties": {"properties": {"type": "object", "properties": {"path": {"type": "string"}}}}}}
+     ]},
+    {"id": "tp_template", "name": "E-commerce Template", "slug": "ecommerce-template", "description": null, "type": "TEMPLATE", "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-02-01T00:00:00Z", "sources": [],
+     "rules": [
+       {"type": "TRACK", "key": "Order Completed", "version": 1, "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z", "deprecatedAt": null,
+        "jsonSchema": {"type": "object", "properties": {"properties": {"type": "object", "required": ["order_id"], "properties": {"order_id": {"type": "string"}}}}}},
+       {"type": "TRACK", "key": "Cart Viewed", "version": 1, "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z", "deprecatedAt": null,
+        "jsonSchema": {"type": "object", "properties": {"properties": {"type": "object", "properties": {"cart_id": {"type": "string"}}}}}}
+     ]}
+  ],
+  "spaces": [{"id": "spa_prod", "slug": "production", "name": "Production"}],
+  "audiences": {
+    "spa_prod": [
+      {"id": "aud_high_value", "spaceId": "spa_prod", "name": "High Value", "description": "LTV over 1000", "key": "high_value", "enabled": true, "status": "ENABLED", "audienceType": "USERS",
+       "computeCadence": {"type": "REALTIME"}, "size": {"count": 1200, "type": "USERS"}, "definition": {"query": "traits.ltv > 1000"}, "createdBy": "usr_ada", "updatedBy": "usr_ada", "createdAt": "2026-03-01T00:00:00Z", "updatedAt": "2026-10-01T00:00:00Z"},
+      {"id": "aud_churn", "spaceId": "spa_prod", "name": "Churn Risk", "description": null, "key": "churn_risk", "enabled": false, "status": "DISABLED", "audienceType": "USERS",
+       "computeCadence": {"type": "BATCH"}, "size": {"count": 340, "type": "USERS"}, "definition": {"query": "traits.churn_risk = 'high'"}, "createdBy": "usr_grace", "updatedBy": "usr_grace", "createdAt": "2026-04-01T00:00:00Z", "updatedAt": "2026-04-02T00:00:00Z"}
+    ]
+  },
+  "computed_traits": {
+    "spa_prod": [
+      {"id": "ct_ltv", "spaceId": "spa_prod", "name": "Lifetime Value", "key": "ltv", "description": "Sum of order totals", "enabled": true, "status": "ENABLED", "definition": {"type": "USERS", "query": "event('Order Completed').sum(properties.total)"}, "options": {"includeHistoricalData": true, "includeAnonymousUsers": false}, "createdBy": "usr_ada", "createdAt": "2026-02-01T00:00:00Z", "updatedAt": "2026-02-01T00:00:00Z"},
+      {"id": "ct_last_order", "spaceId": "spa_prod", "name": "Last Order", "key": "last_order_at", "description": null, "enabled": true, "status": "ENABLED", "definition": {"type": "USERS", "query": "event('Order Completed').last(timestamp)"}, "options": {"includeHistoricalData": false, "includeAnonymousUsers": false}, "createdBy": "usr_grace", "createdAt": "2026-02-02T00:00:00Z", "updatedAt": "2026-02-02T00:00:00Z"}
+    ]
+  },
+  "roles": [
+    {"id": "rol_owner", "name": "Workspace Owner", "description": "Full access"},
+    {"id": "rol_member", "name": "Workspace Member", "description": "Base membership"},
+    {"id": "rol_source_admin", "name": "Source Admin", "description": "Edit sources"},
+    {"id": "rol_readonly", "name": "Read-only", "description": "View only"}
+  ],
+  "users": [
+    {"id": "usr_ada", "name": "Ada Lovelace", "email": "ada@acme.com", "permissions": [{"roleId": "rol_owner", "roleName": "Workspace Owner", "resources": [{"id": "ws_acme", "type": "WORKSPACE"}]}]},
+    {"id": "usr_grace", "name": "Grace Hopper", "email": "grace@acme.com", "permissions": [{"roleId": "rol_source_admin", "roleName": "Source Admin", "resources": [{"id": "src_web", "type": "SOURCE"}]}, {"roleId": "rol_readonly", "roleName": "Read-only", "resources": [{"id": "ws_acme", "type": "WORKSPACE"}]}]},
+    {"id": "usr_linus", "name": "Linus T", "email": "linus@acme.com", "permissions": [{"roleId": "rol_owner", "roleName": "Workspace Owner", "resources": [{"id": "ws_acme", "type": "WORKSPACE"}]}]}
+  ],
+  "groups": [
+    {"id": "grp_data", "name": "Data Team", "memberCount": 4, "permissions": [{"roleId": "rol_member", "roleName": "Workspace Member", "resources": [{"id": "ws_acme", "type": "WORKSPACE"}]}]},
+    {"id": "grp_mobile", "name": "Mobile", "memberCount": 2, "permissions": [{"roleId": "rol_source_admin", "roleName": "Source Admin", "resources": [{"id": "src_ios", "type": "SOURCE", "labels": [{"key": "platform", "value": "mobile"}]}]}]}
+  ],
+  "event_volume_per_minute": [
+    {"source": "src_web", "eventName": "Order Completed", "eventType": "track", "rate": 1},
+    {"source": "src_web", "eventName": "Product Viewed", "eventType": "track", "rate": 10},
+    {"source": "src_ios", "eventName": "Order Completed", "eventType": "track", "rate": 2},
+    {"source": "src_ios", "eventName": "identify", "eventType": "identify", "rate": 3}
+  ],
+  "delivery_per_minute": [
+    {"step": "successfully_received", "source": "src_web", "eventName": "Order Completed", "eventType": "track", "discardReason": null, "appVersion": "2.1.0", "rate": 1},
+    {"step": "successfully_received", "source": "src_web", "eventName": "Product Viewed", "eventType": "track", "discardReason": null, "appVersion": "2.1.0", "rate": 10},
+    {"step": "failed_delivery", "source": "src_web", "destination": "dst_amplitude", "eventName": "Order Completed", "eventType": "track", "discardReason": "rate_limited", "appVersion": "2.1.0", "rate": 2, "retry": 1},
+    {"step": "failed_delivery", "source": "src_web", "destination": "dst_amplitude", "eventName": "Product Viewed", "eventType": "track", "discardReason": "invalid_payload", "appVersion": "2.0.9", "rate": 3, "retry": 0},
+    {"step": "failed_delivery", "source": "src_web", "destination": "dst_ga4", "eventName": "Product Viewed", "eventType": "track", "discardReason": "invalid_payload", "appVersion": "2.1.0", "rate": 5, "retry": 0}
+  ]
+}
