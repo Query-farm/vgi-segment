@@ -111,12 +111,12 @@ export const CATALOG_DOC_LLM =
   "covers the control plane and its metrics: sources (never their write keys), destinations and Actions " +
   "mappings with secret settings redacted, the source → destination/warehouse connection graph, warehouses " +
   "with masked credentials and connection state, warehouse sync history, Functions (code only through " +
-  "function_code), Reverse ETL models and syncs, labels, the audit trail, event volume and Delivery Overview " +
+  "a per-id function), Reverse ETL models and syncs, labels, the audit trail, event volume and Delivery Overview " +
   "time series (schema main); Protocols tracking plans, rules and one row per planned property (schema " +
   "tracking); Engage spaces, audiences and computed traits (schema engage); users, groups and roles (schema " +
-  "iam); and shared shapes in schema unified: runs (warehouse + Reverse ETL syncs in the cross-orchestrator " +
-  "shape), event_definitions, property_definitions and cohorts (the product-analytics vocabulary shared with " +
-  "the Amplitude, Mixpanel and PostHog workers). Every object needs a `segment` DuckDB secret: TOKEN (a " +
+  "iam); and shared shapes in schema unified: warehouse and Reverse ETL syncs in the cross-orchestrator " +
+  "shape, plus planned events, properties and audiences in the product-analytics vocabulary shared with " +
+  "the Amplitude, Mixpanel and PostHog workers. Every object needs a `segment` DuckDB secret: TOKEN (a " +
   "Public API token) and optionally REGION ('us' default or 'eu') or BASE_URL. Ids and time ranges in WHERE " +
   "push down into API paths and parameters; long scans page with opaque cursors and honour 429 rate limits. " +
   "Plan-gated features (Engage, Reverse ETL, Functions, Audit Trail, Protocols) fail with an error naming " +
@@ -131,6 +131,13 @@ export const CATALOG_DOC_MD =
   "keys are never returned and secret-looking settings are redacted. Ids and time windows in `WHERE` are " +
   "pushed into the API; paging and rate limits are handled for you.\n\n" +
   SOURCES_MD;
+
+export const SCHEMA_COMMENT =
+  "Segment control-plane objects and metrics: what collects data, where it goes and how it is loaded.";
+export const TRACKING_COMMENT = "Segment Protocols tracking plans, with each rule's JSON Schema flattened to rows.";
+export const ENGAGE_COMMENT = "Segment Engage / Unify metadata per Profiles space (no profiles).";
+export const IAM_COMMENT = "Segment workspace users, groups and role grants for access reviews.";
+export const UNIFIED_COMMENT = "Segment data in cross-worker shapes for UNION ALL with other Query.Farm workers.";
 
 export const SCHEMA_DOC_MD =
   "## main\n\n" +
