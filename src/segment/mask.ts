@@ -53,7 +53,9 @@ export function maskSecrets(value: unknown, known: string[] = []): unknown {
 /** The dotted paths of the keys that were masked (so an audit can list them without values). */
 export function maskedPaths(value: unknown, prefix = ""): string[] {
   const out: string[] = [];
-  if (value && typeof value === "object" && !Array.isArray(value)) {
+  if (Array.isArray(value)) {
+    for (const x of value) for (const p of maskedPaths(x, `${prefix}[]`)) if (!out.includes(p)) out.push(p);
+  } else if (value && typeof value === "object") {
     for (const [k, x] of Object.entries(value as Record<string, unknown>)) {
       const p = prefix ? `${prefix}.${k}` : k;
       if (isSecretKey(k) && x != null && x !== "") out.push(p);
