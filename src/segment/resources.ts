@@ -68,23 +68,23 @@ function idsFor<A>(scan: ScanContext<A>, column: string, arg?: string): string[]
 
 const workspace = defineSegmentCatalogTable(
   {
-    name: "workspace",
+    name: "workspaces",
     description: "The Segment workspace the token belongs to (id, slug, name)",
-    title: "Workspace",
+    title: "Segment Workspace",
     category: "workspace",
     keywords: "segment, workspace, slug, tenant, account",
     docLlm:
       "One row for the workspace the segment secret's Public API token belongs to (GET /): id, slug and name. " +
       "Use it to confirm which workspace you are connected to; the slug forms app URLs " +
       "(https://app.segment.com/<slug>/...).",
-    docMd: "## workspace\n\nThe workspace the token belongs to: `id`, `slug`, `name`.",
+    docMd: "## workspaces\n\nThe workspace the token belongs to: `id`, `slug`, `name`.",
     columns: [
       C.str("id", "Workspace id.", "id", false),
       C.str("slug", "Workspace slug (used in app.segment.com URLs).", "slug"),
       C.str("name", "Workspace display name.", "name"),
     ],
     requests: () => [{ path: "/", items: "workspace", paging: "none" }],
-    examples: [{ sql: `SELECT slug, name FROM ${M}.workspace`, description: "Which workspace the token reads" }],
+    examples: [{ sql: `SELECT slug, name FROM ${M}.workspaces`, description: "Which workspace the token reads" }],
   },
   MAIN,
   ["id"],
@@ -97,7 +97,7 @@ function sourceColumns(): Col[] {
     C.str("id", "Source id.", "id", false),
     C.str("slug", "Source slug (unique within the workspace).", "slug"),
     C.str("name", "Source display name.", "name"),
-    C.str("workspace_id", "Workspace id.", "workspaceId"),
+    C.str("workspace_id", "Id of the workspace the source belongs to (joins workspaces.id).", "workspaceId"),
     C.bool("enabled", "True when the source accepts data.", "enabled"),
     C.str(
       "source_type",
@@ -115,7 +115,7 @@ function sourceColumns(): Col[] {
       "write_key_count",
       int32,
       "INTEGER",
-      "How many write keys the source has. The write keys themselves are never returned.",
+      "Number of write keys the source has (count). The write keys themselves are never returned.",
       (r) => (Array.isArray(r.writeKeys) ? r.writeKeys.length : null),
     ),
     C.strList("labels", "Labels as 'key:value' strings, e.g. ['environment:prod'].", (r) => labelList(r.labels)),
@@ -127,7 +127,7 @@ const sources = defineSegmentCatalogTable(
   {
     name: "sources",
     description: "Every source in the workspace: type, enabled, labels and masked settings (never write keys)",
-    title: "Sources",
+    title: "Segment Sources",
     category: "pipeline",
     keywords: "segment, sources, write keys, javascript, http api, cloud sources, labels, data collection",
     docLlm:
@@ -164,7 +164,7 @@ const sourceSchemaSettings = defineSegmentCatalogTable(
   {
     name: "source_schema_settings",
     description: "Per-source Protocols schema settings: unplanned events/traits, violation handling, forwarding",
-    title: "Source Schema Settings",
+    title: "Protocols Schema Controls",
     category: "pipeline",
     keywords: "segment, protocols, schema settings, unplanned events, violations, blocking, forwarding",
     docLlm:
@@ -177,7 +177,7 @@ const sourceSchemaSettings = defineSegmentCatalogTable(
     pushdown: "`source_id` (=, IN) reads only those sources.",
     feature: FEATURE_PROTOCOLS,
     columns: [
-      C.ctx("source_id", "Source id.", "source_id"),
+      C.ctx("source_id", "Source whose schema controls these are (joins sources.id).", "source_id"),
       C.ctx("source_name", "Source name (NULL when the source id was given directly).", "source_name", true),
       C.bool(
         "track_allow_unplanned_events",
@@ -284,7 +284,7 @@ const destinations = defineSegmentCatalogTable(
   {
     name: "destinations",
     description: "Every destination instance: type, enabled, feeding source and masked settings",
-    title: "Destinations",
+    title: "Segment Destinations",
     category: "pipeline",
     keywords: "segment, destinations, integrations, actions, webhooks, amplitude, google analytics, settings",
     docLlm:
@@ -335,7 +335,7 @@ const destinationSubscriptions = defineSegmentCatalogTable(
   {
     name: "destination_subscriptions",
     description: "Actions destination subscriptions (mappings): action, trigger, enabled, Reverse ETL model",
-    title: "Destination Subscriptions",
+    title: "Actions Mappings",
     category: "pipeline",
     keywords: "segment, actions, subscriptions, mappings, trigger, reverse etl, destination actions",
     docLlm:
@@ -351,7 +351,7 @@ const destinationSubscriptions = defineSegmentCatalogTable(
       C.str("id", "Subscription id.", "id", false),
       C.str("name", "Subscription (mapping) name.", "name"),
       C.str("action_slug", "Action slug, e.g. 'trackEvent'.", "actionSlug"),
-      C.str("action_id", "Action id.", "actionId"),
+      C.str("action_id", "Catalog id of the destination action the mapping runs.", "actionId"),
       C.bool("enabled", "True when the mapping is active.", "enabled"),
       C.str("trigger", "FQL trigger condition, e.g. 'type = \"track\"'.", "trigger"),
       C.str("model_id", "Reverse ETL model id for Reverse ETL mappings, else NULL.", "modelId"),
@@ -402,7 +402,7 @@ const connections = defineSegmentCatalogTable(
   {
     name: "connections",
     description: "The pipeline graph: one edge per source → destination and source → warehouse connection",
-    title: "Connections (Pipeline Graph)",
+    title: "Pipeline Graph",
     category: "pipeline",
     keywords: "segment, connections, pipeline graph, lineage, source to destination, source to warehouse, edges",
     docLlm:
@@ -414,7 +414,7 @@ const connections = defineSegmentCatalogTable(
     docMd: "## connections\n\nThe source → destination / warehouse edge list.",
     pushdown: "`source_id` (=, IN) reads only those sources; `target_type` (=, IN) skips the other edge kind.",
     columns: [
-      C.ctx("source_id", "Source id.", "source_id"),
+      C.ctx("source_id", "Source the edge starts from (joins sources.id).", "source_id"),
       C.ctx("source_name", "Source name (NULL when the source id was given directly).", "source_name", true),
       C.custom(
         "source_enabled",
@@ -483,7 +483,7 @@ const warehouses = defineSegmentCatalogTable(
   {
     name: "warehouses",
     description: "Every warehouse connection: type, enabled, masked credentials and live connection state",
-    title: "Warehouses",
+    title: "Segment Warehouses",
     category: "warehouses",
     keywords: "segment, warehouses, snowflake, bigquery, redshift, postgres, databricks, connection state",
     docLlm:
@@ -497,7 +497,7 @@ const warehouses = defineSegmentCatalogTable(
     columns: [
       C.str("id", "Warehouse id.", "id", false),
       C.str("name", "Warehouse name (settings.name).", "settings.name"),
-      C.str("workspace_id", "Workspace id.", "workspaceId"),
+      C.str("workspace_id", "Id of the workspace the warehouse belongs to (joins workspaces.id).", "workspaceId"),
       C.bool("enabled", "True when syncs are enabled.", "enabled"),
       C.str("warehouse_type", "Catalog slug: snowflake, bigquery, redshift, postgres, databricks …", "metadata.slug"),
       C.str("warehouse_type_name", "Catalog name of the warehouse type.", "metadata.name"),
@@ -540,7 +540,7 @@ const warehouseSyncs = defineSegmentCatalogTable(
   {
     name: "warehouse_syncs",
     description: "Warehouse sync history: one row per sync of a source into a warehouse (status, rows, duration)",
-    title: "Warehouse Syncs",
+    title: "Warehouse Sync History",
     category: "warehouses",
     keywords: "segment, warehouse syncs, sync history, sync reports, loads, failures, snowflake, bigquery",
     docLlm:
@@ -572,7 +572,7 @@ const warehouseSyncs = defineSegmentCatalogTable(
 
 export function warehouseSyncColumns(): Col[] {
   return [
-    C.ctx("warehouse_id", "Warehouse id.", "warehouse_id"),
+    C.ctx("warehouse_id", "Warehouse the sync loaded into (joins warehouses.id).", "warehouse_id"),
     C.ctx("warehouse_name", "Warehouse name (NULL when the warehouse id was given directly).", "warehouse_name", true),
     C.str("source_id", "Source loaded by the sync.", "sourceId", false),
     C.time("started_at", "When the sync started.", "start", false),
@@ -619,7 +619,7 @@ const functions = defineSegmentCatalogTable(
   {
     name: "functions",
     description: "Source, destination and insert functions (metadata only; see function_code for the code)",
-    title: "Functions",
+    title: "Segment Functions",
     category: "functions",
     keywords: "segment, functions, source functions, destination functions, insert functions, custom code",
     docLlm:
@@ -639,10 +639,10 @@ const functions = defineSegmentCatalogTable(
         "resourceType",
       ),
       C.str("display_name", "Function name.", "displayName"),
-      C.str("description", "Description.", "description"),
+      C.str("description", "What the function does, as written by its author.", "description"),
       C.time("created_at", "When the function was created.", "createdAt"),
       C.str("created_by", "Id of the user who created it.", "createdBy"),
-      C.str("logo_url", "Logo URL.", "logoUrl"),
+      C.str("logo_url", "URL of the function's logo image, if one was uploaded.", "logoUrl"),
       C.str("catalog_id", "Catalog id of the function (used when connecting it).", "catalogId"),
     ],
     requests: (scan) =>
@@ -705,7 +705,7 @@ const labels = defineSegmentCatalogTable(
   {
     name: "labels",
     description: "Workspace labels (key:value pairs used to scope sources and access)",
-    title: "Labels",
+    title: "Workspace Labels",
     category: "workspace",
     keywords: "segment, labels, tags, environment, access scoping",
     docLlm:
@@ -715,7 +715,7 @@ const labels = defineSegmentCatalogTable(
     columns: [
       C.str("key", "Label key, e.g. 'environment'.", "key", false),
       C.str("value", "Label value, e.g. 'prod'.", "value", false),
-      C.str("description", "Description.", "description"),
+      C.str("description", "What the label is for (free text set in the workspace).", "description"),
     ],
     requests: () => [{ path: "/labels", items: "labels", paging: "none" }],
     examples: [{ sql: `SELECT key, value FROM ${M}.labels ORDER BY key, value`, description: "All labels" }],
@@ -788,7 +788,7 @@ const reverseEtlModels = defineSegmentCatalogTable(
   {
     name: "reverse_etl_models",
     description: "Reverse ETL models: the warehouse SQL that feeds Reverse ETL mappings",
-    title: "Reverse ETL Models",
+    title: "Segment Reverse ETL Models",
     category: "reverse_etl",
     keywords: "segment, reverse etl, models, warehouse query, activation",
     docLlm:
@@ -803,7 +803,7 @@ const reverseEtlModels = defineSegmentCatalogTable(
       C.str("id", "Model id.", "id", false),
       C.str("source_id", "Reverse ETL source (warehouse connection) id.", "sourceId"),
       C.str("name", "Model name.", "name"),
-      C.str("description", "Description.", "description"),
+      C.str("description", "What the model computes, as written by its author.", "description"),
       C.bool("enabled", "True when the model is enabled.", "enabled"),
       C.str("query", "The SQL the model runs in the warehouse.", "query"),
       C.str("query_identifier_column", "Column that uniquely identifies a record.", "queryIdentifierColumn"),
@@ -835,7 +835,7 @@ export function reverseEtlSyncColumns(): Col[] {
     C.ctx("destination_id", "Destination whose mapping ran the sync.", "destination_id", true),
     C.ctx("subscription_id", "Mapping (subscription) id.", "subscription_id"),
     C.str("model_id", "Reverse ETL model id.", (r) => r.modelId ?? r.__ctx?.model_id, false),
-    C.str("sync_id", "Sync id.", "syncId", false),
+    C.str("sync_id", "Segment's id for this sync run.", "syncId", false),
     C.str("source_id", "Reverse ETL source id.", "sourceId"),
     C.str("status", "Sync status: IN_PROGRESS, SUCCESS, PARTIAL_SUCCESS or FAIL.", "syncStatus"),
     C.time("started_at", "When the sync started.", "startedAt"),
@@ -894,7 +894,7 @@ const reverseEtlSyncs = defineSegmentCatalogTable(
   {
     name: "reverse_etl_syncs",
     description: "Reverse ETL sync runs per mapping: status, extract and delivery counts, errors",
-    title: "Reverse ETL Syncs",
+    title: "Reverse ETL Sync Runs",
     category: "reverse_etl",
     keywords: "segment, reverse etl, syncs, runs, activation, delivery failures, sync status",
     docLlm:
@@ -942,7 +942,7 @@ const trackingPlans = defineSegmentCatalogTable(
       C.str("id", "Tracking plan id.", "id", false),
       C.str("name", "Plan name.", "name"),
       C.str("slug", "Plan slug.", "slug"),
-      C.str("description", "Description.", "description"),
+      C.str("description", "What the plan covers, as written by its owner.", "description"),
       C.str("type", "LIVE, TEMPLATE, RULE_LIBRARY, PROPERTY_LIBRARY or ENGAGE.", "type"),
       C.time("created_at", "When the plan was created.", "createdAt"),
       C.time("updated_at", "When the plan last changed.", "updatedAt"),
@@ -991,7 +991,7 @@ function rulesReq(plan: Row | string): Req {
 }
 
 const planCtxCols = (): Col[] => [
-  C.ctx("tracking_plan_id", "Tracking plan id.", "tracking_plan_id"),
+  C.ctx("tracking_plan_id", "Tracking plan the row belongs to (joins tracking.plans.id).", "tracking_plan_id"),
   C.ctx("tracking_plan_name", "Tracking plan name (from the plan list).", "tracking_plan_name", true),
   C.ctx("plan_type", "Tracking plan type (LIVE, TEMPLATE …).", "plan_type", true),
 ];
@@ -1017,13 +1017,19 @@ const rules = defineSegmentCatalogTable(
     feature: FEATURE_PROTOCOLS,
     columns: [
       ...planCtxCols(),
+      C.str(
+        "rule_id",
+        "Rule identity within the plan, '<rule_type>:<key>' (Segment rules carry no id), e.g. 'TRACK:Order Completed', 'IDENTIFY:'.",
+        (r) => `${r.type}:${r.key ?? ""}`,
+        false,
+      ),
       C.str("rule_type", "TRACK, IDENTIFY, GROUP, PAGE, SCREEN or COMMON.", "type", false),
       C.str(
         "event_name",
         "Rule key: the event name for TRACK rules (page/screen name for PAGE/SCREEN).",
         (r) => r.key || null,
       ),
-      C.big("version", "Rule version.", "version"),
+      C.big("version", "Rule version number, incremented by Segment on every edit (1 = first).", "version"),
       C.time("created_at", "When the rule was created.", "createdAt"),
       C.time("updated_at", "When the rule last changed.", "updatedAt"),
       C.time("deprecated_at", "When the rule was deprecated, else NULL.", "deprecatedAt"),
@@ -1053,7 +1059,7 @@ const rules = defineSegmentCatalogTable(
     ],
   },
   TRACKING,
-  [],
+  ["tracking_plan_id", "rule_id"],
 );
 
 const properties = defineSegmentCatalogTable(
@@ -1077,6 +1083,7 @@ const properties = defineSegmentCatalogTable(
     feature: FEATURE_PROTOCOLS,
     columns: [
       ...planCtxCols(),
+      C.str("rule_id", "The owning rule, '<rule_type>:<key>' (joins tracking.rules.rule_id).", "rule_id", false),
       C.str("rule_type", "TRACK, IDENTIFY, GROUP, PAGE, SCREEN or COMMON.", "rule_type", false),
       C.str("event_name", "Event name for TRACK rules (rule key), else NULL.", "event_name"),
       C.str("section", "'properties', 'traits' or 'context'.", "section", false),
@@ -1095,10 +1102,10 @@ const properties = defineSegmentCatalogTable(
       C.strList("enum_values", "Allowed values (enum/const) as strings; NULL when unrestricted.", "enum_values"),
       C.str("pattern", "Regex the value must match.", "pattern"),
       C.str("format", "JSON Schema format, e.g. 'date-time', 'email'.", "format"),
-      C.num("minimum", "Minimum value.", "minimum"),
-      C.num("maximum", "Maximum value.", "maximum"),
-      C.big("min_length", "Minimum string length.", "min_length"),
-      C.big("max_length", "Maximum string length.", "max_length"),
+      C.num("minimum", "Smallest allowed numeric value, in the property's own units (JSON Schema minimum).", "minimum"),
+      C.num("maximum", "Largest allowed numeric value, in the property's own units (JSON Schema maximum).", "maximum"),
+      C.big("min_length", "Minimum string length in characters (JSON Schema minLength).", "min_length"),
+      C.big("max_length", "Maximum string length in characters (JSON Schema maxLength).", "max_length"),
       C.str("description", "Property description.", "description"),
       C.json("json_schema", "The property's own JSON Schema.", "json_schema"),
     ],
@@ -1117,7 +1124,7 @@ const properties = defineSegmentCatalogTable(
     ],
   },
   TRACKING,
-  [],
+  ["tracking_plan_id", "rule_id", "section", "property_name"],
 );
 
 /** Rules → one row per flattened property. */
@@ -1126,6 +1133,7 @@ export function flattenRules(items: Row[]): Row[] {
     flattenRuleSchema(rule.jsonSchema).map((p) => ({
       ...p,
       rule_type: rule.type,
+      rule_id: `${rule.type}:${rule.key ?? ""}`,
       event_name: rule.key || null,
       deprecated_at: rule.deprecatedAt ?? null,
     })),
@@ -1150,8 +1158,8 @@ const planSources = defineSegmentCatalogTable(
     columns: [
       ...planCtxCols(),
       C.str("source_id", "Connected source id.", "id", false),
-      C.str("source_name", "Source name.", "name"),
-      C.str("source_slug", "Source slug.", "slug"),
+      C.str("source_name", "Display name of the connected source.", "name"),
+      C.str("source_slug", "URL slug of the connected source.", "slug"),
       C.str("source_type", "Catalog slug of the source type.", "metadata.slug"),
       C.bool("enabled", "Whether the source is enabled.", "enabled"),
     ],
@@ -1179,7 +1187,7 @@ const spaces = defineSegmentCatalogTable(
   {
     name: "spaces",
     description: "Engage / Unify spaces (Profiles workspaces)",
-    title: "Spaces",
+    title: "Engage Spaces",
     category: "engage",
     keywords: "segment, engage, unify, profiles, spaces, personas",
     docLlm:
@@ -1214,7 +1222,7 @@ const audiences = defineSegmentCatalogTable(
   {
     name: "audiences",
     description: "Engage audiences per space: definition, size, compute cadence, status",
-    title: "Audiences",
+    title: "Engage Audiences",
     category: "engage",
     keywords: "segment, engage, audiences, segments, cohorts, audience size, realtime, batch",
     docLlm:
@@ -1226,11 +1234,11 @@ const audiences = defineSegmentCatalogTable(
     pushdown: "`space_id` (=, IN) reads only those spaces.",
     feature: FEATURE_ENGAGE,
     columns: [
-      C.ctx("space_id", "Space id.", "space_id"),
+      C.ctx("space_id", "Engage space the object lives in (joins spaces.id).", "space_id"),
       C.str("id", "Audience id.", "id", false),
       C.str("name", "Audience name.", "name"),
       C.str("key", "Audience key (the trait name written to profiles).", "key"),
-      C.str("description", "Description.", "description"),
+      C.str("description", "What the audience selects, as written by its author.", "description"),
       C.bool("enabled", "True when the audience computes.", "enabled"),
       C.str("status", "Computation status.", "status"),
       C.str("audience_type", "USERS, ACCOUNTS or LINKED.", "audienceType"),
@@ -1261,7 +1269,7 @@ const computedTraits = defineSegmentCatalogTable(
   {
     name: "computed_traits",
     description: "Engage computed traits per space: definition, status, options",
-    title: "Computed Traits",
+    title: "Engage Computed Traits",
     category: "engage",
     keywords: "segment, engage, computed traits, profile traits, aggregations",
     docLlm:
@@ -1272,11 +1280,11 @@ const computedTraits = defineSegmentCatalogTable(
     pushdown: "`space_id` (=, IN) reads only those spaces.",
     feature: FEATURE_ENGAGE,
     columns: [
-      C.ctx("space_id", "Space id.", "space_id"),
+      C.ctx("space_id", "Engage space the object lives in (joins spaces.id).", "space_id"),
       C.str("id", "Computed trait id.", "id", false),
       C.str("name", "Trait name.", "name"),
       C.str("key", "Trait key written to profiles.", "key"),
-      C.str("description", "Description.", "description"),
+      C.str("description", "What the trait computes, as written by its author.", "description"),
       C.bool("enabled", "True when the trait computes.", "enabled"),
       C.str("status", "Computation status.", "status"),
       C.str("definition_type", "USERS or ACCOUNTS.", "definition.type"),
@@ -1310,7 +1318,7 @@ const users = defineSegmentCatalogTable(
   {
     name: "users",
     description: "Workspace users and their roles (IAM)",
-    title: "Users",
+    title: "Workspace Users",
     category: "access",
     keywords: "segment, iam, users, members, roles, permissions, access review",
     docLlm:
@@ -1341,7 +1349,7 @@ const userGroups = defineSegmentCatalogTable(
   {
     name: "user_groups",
     description: "IAM user groups: member count and roles",
-    title: "User Groups",
+    title: "IAM User Groups",
     category: "access",
     keywords: "segment, iam, groups, user groups, roles, permissions",
     docLlm: "Every IAM user group (GET /groups): id, name, member_count, role_names and permissions (JSON grants).",
@@ -1369,7 +1377,7 @@ const roles = defineSegmentCatalogTable(
   {
     name: "roles",
     description: "IAM roles available in the workspace",
-    title: "Roles",
+    title: "IAM Roles",
     category: "access",
     keywords: "segment, iam, roles, permissions",
     docLlm: "Every IAM role (GET /roles): id, name and description.",

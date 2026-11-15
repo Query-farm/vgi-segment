@@ -1,16 +1,104 @@
 # Private graders for the public vgi.agent_test_tasks in the worker's catalog metadata.
-# `vgi-lint lint --ai` runs an agent on each prompt and grades it with check_sql.
+# `vgi-lint lint --ai` runs an agent on each prompt and grades it against reference_sql.
+# Every task needs a `segment` secret (a Segment Public API TOKEN) for a live workspace;
+# against the offline replay server (test/mock_api) the answers are deterministic.
 # See https://github.com/Query-farm/vgi-lint-check (VGI920).
 tasks:
-  - name: formal_greeting
-    reference_sql: SELECT segment.main.greet('Grace', 'formal') AS greeting
-  - name: sum_of_squares
-    reference_sql: SELECT sum(squared) AS total FROM segment.main.sequence_table(10)
-  - name: stepped_sequence
-    reference_sql: SELECT n FROM segment.main.sequence_table(4, step := 5) ORDER BY n
-  # Reads the public demo API (https://vgi-starter-api.query-farm.services/v1).
-  - name: items_per_category
-    check_sql: >-
-      SELECT count(*) = 3 AND sum(items) = 25
-      FROM (SELECT category, count(*) AS items
-            FROM segment.main.fetch_items('https://vgi-starter-api.query-farm.services/v1') GROUP BY category)
+  - name: workspace_slug
+    reference_sql: SELECT slug FROM segment.main.workspaces
+  - name: enabled_sources
+    reference_sql: SELECT name FROM segment.main.sources WHERE enabled ORDER BY name
+  - name: destinations_per_type
+    reference_sql: >-
+      SELECT destination_type, count(*) AS instances FROM segment.main.destinations
+      GROUP BY destination_type ORDER BY destination_type
+  - name: web_outputs
+    reference_sql: >-
+      SELECT target_type, target_name FROM segment.main.connections
+      WHERE source_name = 'Website' ORDER BY target_type, target_name
+  - name: failed_warehouse_syncs
+    reference_sql: >-
+      SELECT warehouse_id, source_id, started_at, error_message FROM segment.main.warehouse_syncs
+      WHERE status = 'FAILED' ORDER BY started_at
+  - name: rows_synced
+    reference_sql: >-
+      SELECT warehouse_id, sum(rows_synced) AS rows_synced FROM segment.main.warehouse_syncs
+      GROUP BY warehouse_id ORDER BY warehouse_id
+  - name: unplanned_blocked
+    reference_sql: >-
+      SELECT source_name FROM segment.main.source_schema_settings
+      WHERE track_allow_unplanned_events = false ORDER BY source_name
+  - name: order_completed_props
+    reference_sql: >-
+      SELECT DISTINCT property_name FROM segment.tracking.properties
+      WHERE event_name = 'Order Completed' AND section = 'properties' AND is_required ORDER BY property_name
+  - name: plan_enums
+    reference_sql: >-
+      SELECT DISTINCT unnest(enum_values) AS allowed FROM segment.tracking.properties
+      WHERE property_name = 'plan' AND section = 'traits' ORDER BY allowed
+  - name: workspace_owners
+    reference_sql: >-
+      SELECT email FROM segment.iam.users WHERE list_contains(role_names, 'Workspace Owner') ORDER BY email
+  - name: audit_changes
+    reference_sql: >-
+      SELECT DISTINCT actor_email FROM segment.main.audit_events
+      WHERE resource_type = 'destination' AND type LIKE '%Modified%' ORDER BY actor_email
+  - name: retl_failures
+    reference_sql: SELECT count(*) AS failed FROM segment.main.reverse_etl_syncs WHERE status = 'FAIL'
+  - name: largest_audience
+    reference_sql: SELECT name FROM segment.engage.audiences ORDER BY size DESC NULLS LAST LIMIT 1
+  - name: transform_functions
+    reference_sql: >-
+      SELECT resource_type, count(*) AS functions FROM segment.main.functions
+      GROUP BY resource_type ORDER BY resource_type
+  - name: engage_inventory
+    reference_sql: >-
+      SELECT s.name, (SELECT count(*) FROM segment.engage.audiences a WHERE a.space_id = s.id) AS audiences,
+             (SELECT count(*) FROM segment.engage.computed_traits t WHERE t.space_id = s.id) AS computed_traits
+      FROM segment.engage.spaces s ORDER BY s.name
+  - name: group_roles
+    reference_sql: >-
+      SELECT g.name, g.role_names, (SELECT count(*) FROM segment.iam.roles) AS total_roles
+      FROM segment.iam.user_groups g ORDER BY g.name
+  - name: delivery_failures
+    reference_sql: >-
+      SELECT discard_reason, sum(count) AS events
+      FROM segment.main.delivery_overview('failed_delivery', 'src_web', destination_id := 'dst_amplitude')
+      GROUP BY discard_reason ORDER BY events DESC
+  - name: active_mappings
+    reference_sql: >-
+      SELECT destination_id, name, trigger FROM segment.main.destination_subscriptions
+      WHERE enabled ORDER BY destination_id, name
+  - name: weekly_volume
+    reference_sql: >-
+      SELECT source_name, sum(count) AS events FROM segment.main.event_volume()
+      GROUP BY source_name ORDER BY source_name
+  - name: function_code_size
+    reference_sql: >-
+      SELECT f.display_name, length(c.code) AS code_chars FROM segment.main.functions f,
+      LATERAL (SELECT code FROM segment.main.function_code(f.id)) c
+      WHERE f.resource_type = 'DESTINATION' ORDER BY f.display_name
+  - name: prod_labels
+    reference_sql: >-
+      SELECT l.key || ':' || l.value AS label,
+             (SELECT list(s.name ORDER BY s.name) FROM segment.main.sources s WHERE list_contains(s.labels, l.key || ':' || l.value)) AS sources
+      FROM segment.main.labels l ORDER BY label
+  - name: retl_models_by_mapping
+    reference_sql: >-
+      SELECT m.name AS model, d.destination_id, d.name AS mapping
+      FROM segment.main.reverse_etl_models m JOIN segment.main.destination_subscriptions d ON d.model_id = m.id
+      ORDER BY model, mapping
+  - name: warehouse_health
+    reference_sql: SELECT name FROM segment.main.warehouses WHERE connection_state = 'FAILED' ORDER BY name
+  - name: plan_coverage
+    reference_sql: >-
+      SELECT p.name, (SELECT count(*) FROM segment.tracking.rules r WHERE r.tracking_plan_id = p.id) AS rules,
+             (SELECT list(ps.source_name ORDER BY ps.source_name) FROM segment.tracking.plan_sources ps WHERE ps.tracking_plan_id = p.id) AS sources
+      FROM segment.tracking.plans p ORDER BY p.name
+  - name: unified_runs_status
+    reference_sql: SELECT status, count(*) AS runs FROM segment.unified.runs GROUP BY status ORDER BY status
+  - name: shared_definitions
+    reference_sql: >-
+      SELECT (SELECT count(*) FROM segment.unified.event_definitions) AS events,
+             (SELECT count(*) FROM segment.unified.property_definitions WHERE scope = 'user') AS user_traits,
+             (SELECT name FROM segment.unified.cohorts ORDER BY size DESC LIMIT 1) AS largest_cohort

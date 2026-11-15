@@ -114,9 +114,9 @@ export const eventVolume: VgiFunction = defineSegmentTable<VolumeArgs>({
   keywords: "segment, event volume, throughput, events per day, mtu, observability, ingestion, time series",
   docLlm:
     "Events received by the workspace over time (GET /events/volume): one row per bucket and dimension " +
-    "combination with time (bucket start, TIMESTAMPTZ), granularity, source_id, source_name, source_slug, " +
+    "combination with time (bucket start, `TIMESTAMPTZ`), granularity, source_id, source_name, source_slug, " +
     "event_name, event_type ('track', 'identify', 'page', 'screen', 'group', 'alias') and count. Only the " +
-    "dimension columns the query reads are requested as groupBy, so `SELECT time, sum(count)` is a single " +
+    "dimension columns the query reads are requested as groupBy, so summing count by time alone gives a single " +
     "workspace total and adding event_name splits by event. Named arguments: start_time, end_time (an " +
     "inclusive/exclusive window), granularity ('DAY' default, 'HOUR', 'MINUTE'). Without arguments the window " +
     "comes from WHERE time >= … AND time < …, else the last 7 days (DAY). WHERE source_id / event_name / " +

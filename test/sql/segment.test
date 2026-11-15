@@ -96,7 +96,7 @@ CREATE SECRET seg (TYPE segment, TOKEN 'test-token', BASE_URL '{SEGMENT_FIXTURE_
 # -------------------------------------------------------------------- workspace
 
 query TTT
-SELECT id, slug, name FROM segment.main.workspace;
+SELECT id, slug, name FROM segment.main.workspaces;
 ----
 ws_acme	acme	Acme Inc
 

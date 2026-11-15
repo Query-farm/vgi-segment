@@ -134,39 +134,62 @@ export const CATALOG_DOC_MD =
 
 export const SCHEMA_DOC_MD =
   "## main\n\n" +
-  "The Segment control plane: workspace, sources, destinations, Actions mappings, connections, warehouses " +
-  "and syncs, functions, Reverse ETL, labels, the audit trail, and the event-volume / Delivery Overview " +
-  "time series. All objects need a `segment` secret.";
+  "The Segment control plane: what collects data, where it goes and how it is loaded. Sources feed " +
+  "destinations and warehouses; the connection graph, Actions mappings and Protocols schema controls " +
+  "describe that pipeline, and sync histories show whether loads succeeded.\n\n" +
+  "Event volume and Delivery Overview are time series with a granularity and a window; read dimension " +
+  "columns become the API's groupBy. Write keys are never returned and secret settings are redacted.\n\n" +
+  "Every object needs a `segment` secret. Ids and time ranges in `WHERE` are pushed into the API.";
 export const SCHEMA_DOC_LLM =
-  "Segment control-plane objects as tables (pushdown on ids and time ranges) plus three table functions: " +
-  "event_volume(start_time :=, end_time :=, granularity :=) and delivery_overview(step, source_id, " +
-  "destination_id :=, …) for time series, and function_code(function_id) for a function's code. " +
-  "Per-parent tables (source_schema_settings, destination_subscriptions, connections, warehouse_syncs, " +
-  "reverse_etl_syncs) take the parent id as a WHERE = / IN filter and otherwise read every parent.";
+  "The Segment control plane as tables (pushdown on ids and time ranges) plus table functions for time " +
+  "series (event volume and Delivery Overview with start_time :=, end_time :=, granularity :=) and for " +
+  "reading one Function's code by id. Per-parent tables (schema settings, mappings, connections, " +
+  "warehouse and Reverse ETL syncs) take the parent id as a WHERE = / IN filter and otherwise read every " +
+  "parent, one call each. Secret settings are redacted; source write keys are never returned.";
 
 export const TRACKING_DOC_MD =
-  "## tracking\n\nProtocols tracking plans: plans, rules (JSON Schema), one row per planned property, and connected sources.";
+  "## tracking\n\n" +
+  "Segment Protocols tracking plans: the agreed specification of which events, properties and traits a " +
+  "source may send.\n\n" +
+  "Each rule's JSON Schema is also flattened into one row per property or trait, with its type, required " +
+  "flag, allowed values, pattern and bounds, so a plan can be audited or compared with plain SQL.\n\n" +
+  "Filter on `tracking_plan_id` to read one plan only.";
 export const TRACKING_DOC_LLM =
-  "Segment Protocols tracking plans. plans lists them; rules has one row per event/identify/group rule with " +
-  "its JSON Schema; properties flattens every rule's schema into one row per property or trait (type, " +
-  "required, enum values, pattern); plan_sources links plans to sources. WHERE tracking_plan_id = '…' reads " +
-  "one plan only.";
-export const ENGAGE_DOC_MD = "## engage\n\nEngage / Unify spaces, audiences and computed traits (metadata).";
+  "Segment Protocols tracking plans. Plans have a type (LIVE plans are connected to sources); each plan " +
+  "has rules (TRACK, PAGE, SCREEN, IDENTIFY, GROUP) carrying a JSON Schema, and the flattened table has one " +
+  "row per property or trait (dotted paths for nested objects, [] for array items) with data_type, " +
+  "is_required, enum_values, pattern, minimum/maximum. WHERE tracking_plan_id = '…' reads one plan only.";
+export const ENGAGE_DOC_MD =
+  "## engage\n\n" +
+  "Segment Engage / Unify metadata: Profiles spaces, the audiences defined in them (definition, size, " +
+  "compute cadence) and computed traits.\n\n" +
+  "Only metadata is read; profiles themselves are not listed. Needs Engage or Unify on the Segment " +
+  "plan: without it the query fails with a 403 that names the feature.";
 export const ENGAGE_DOC_LLM =
-  "Engage / Unify metadata: spaces, audiences (definition, size, cadence) and computed traits per space. " +
-  "WHERE space_id = '…' reads one space. Needs Engage or Unify on the Segment plan.";
-export const IAM_DOC_MD = "## iam\n\nWorkspace users, user groups and roles.";
+  "Engage / Unify metadata: spaces, audiences (definition query, size, REALTIME or BATCH cadence, type) and " +
+  "computed traits per space. WHERE space_id = '…' reads one space; otherwise every space is listed first. " +
+  "Needs Engage or Unify on the Segment plan (403 otherwise).";
+export const IAM_DOC_MD =
+  "## iam\n\n" +
+  "Segment access management: who can sign in to the workspace, which user groups exist and which roles " +
+  "they hold.\n\n" +
+  "Role grants are listed with the resources (workspace, sources, spaces) and labels they are scoped to, " +
+  "for access reviews.";
 export const IAM_DOC_LLM =
-  "Segment access management: users (name, email, role names, permission grants), user groups and roles. " +
-  "Use for access reviews.";
+  "Segment access management for access reviews: workspace users (name, email as Segment returns it, role " +
+  "names and JSON permission grants scoped to resources or labels), user groups with member counts and " +
+  "roles, and the role catalog. Use list_contains(role_names, 'Workspace Owner') to find owners.";
 export const UNIFIED_DOC_MD =
-  "## unified\n\nSegment rows in shared shapes: `runs` (cross-orchestrator) and the product-analytics " +
-  "vocabulary (`event_definitions`, `property_definitions`, `cohorts`).";
+  "## unified\n\n" +
+  "Segment data in shapes other Query.Farm workers share, so one `UNION ALL` covers several tools.\n\n" +
+  "Warehouse and Reverse ETL syncs appear as orchestrator runs next to Airflow, Dagster, Prefect or dbt; " +
+  "planned events, properties and Engage audiences appear in the product-analytics vocabulary shared with " +
+  "Amplitude, Mixpanel and PostHog (`tool = 'segment'`).";
 export const UNIFIED_DOC_LLM =
-  "Shared shapes for UNION ALL across workers. runs: warehouse syncs and Reverse ETL syncs as " +
-  "orchestrator = 'segment' runs (same columns as airflow/dagster/prefect/dbt unified.runs). " +
-  "event_definitions / property_definitions: planned events and properties from LIVE tracking plans in the " +
-  "vocabulary shared with amplitude/mixpanel/posthog (tool = 'segment'). cohorts: Engage audiences.";
+  "Shared shapes for UNION ALL across workers. Runs: warehouse syncs and Reverse ETL syncs with " +
+  "orchestrator = 'segment' and the same columns as the orchestrator workers' unified runs. Definitions: " +
+  "planned events and properties from LIVE tracking plans in the product-analytics vocabulary " +
+  "(tool = 'segment'); cohorts: Engage audiences. Native detail lives in schemas main, tracking and engage.";
 
 export const AGENT_TEST_TASKS = [
   { name: "workspace_slug", prompt: "What is the slug of the Segment workspace?" },
@@ -189,6 +212,34 @@ export const AGENT_TEST_TASKS = [
   { name: "retl_failures", prompt: "How many Segment Reverse ETL syncs failed?" },
   { name: "largest_audience", prompt: "Which Segment Engage audience is the largest?" },
   { name: "transform_functions", prompt: "How many Segment functions are there of each type?" },
+  { name: "engage_inventory", prompt: "How many audiences and computed traits does each Segment Engage space have?" },
+  { name: "group_roles", prompt: "Which roles does each Segment user group hold, and how many roles exist in total?" },
+  {
+    name: "delivery_failures",
+    prompt: "Over the last week, why did events from source src_web fail to deliver to destination dst_amplitude?",
+  },
+  { name: "active_mappings", prompt: "List the enabled Segment Actions mappings with their triggers." },
+  { name: "weekly_volume", prompt: "How many events did each Segment source receive in the last 7 days?" },
+  { name: "function_code_size", prompt: "How long (in characters) is the code of each Segment destination function?" },
+  { name: "prod_labels", prompt: "Which Segment labels exist, and which sources carry the environment:prod label?" },
+  {
+    name: "retl_models_by_mapping",
+    prompt: "Which Segment Reverse ETL models are used by which destination mappings?",
+  },
+  { name: "warehouse_health", prompt: "Which Segment warehouses are failing their connection check?" },
+  {
+    name: "plan_coverage",
+    prompt: "For each Segment tracking plan, how many rules does it have and which sources is it connected to?",
+  },
+  {
+    name: "unified_runs_status",
+    prompt: "Across all Segment syncs in the shared runs shape, how many runs ended in each status?",
+  },
+  {
+    name: "shared_definitions",
+    prompt:
+      "In the shared product-analytics shape, how many planned events and how many planned user traits does Segment define, and what is the largest cohort?",
+  },
 ];
 
 /** Bind-only probes: each binds the object and shows its columns without fetching (LIMIT 0). */

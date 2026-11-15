@@ -73,7 +73,7 @@ export const runs: TableDescriptor = defineSegmentCatalogTable(
   {
     name: "runs",
     description: "Warehouse syncs and Reverse ETL syncs in the cross-orchestrator unified.runs shape",
-    title: "Runs (Unified)",
+    title: "Unified Runs",
     category: "unified",
     keywords: "segment, runs, unified, orchestrator, warehouse syncs, reverse etl syncs, pipeline runs",
     docLlm:
@@ -102,7 +102,7 @@ export const runs: TableDescriptor = defineSegmentCatalogTable(
     ],
   },
   UNIFIED,
-  [],
+  ["run_id"],
 );
 
 const tool = C.lit("tool", "The analytics tool the row came from: 'segment'.", "segment");
@@ -111,7 +111,7 @@ export const eventDefinitions: TableDescriptor = defineSegmentCatalogTable(
   {
     name: "event_definitions",
     description: "Planned events from LIVE tracking plans in the shared product-analytics shape",
-    title: "Event Definitions (Shared Shape)",
+    title: "Shared Event Definitions",
     category: "unified",
     keywords: "product analytics, event definitions, tracking plan, unified, segment, protocols",
     docLlm:
@@ -123,7 +123,7 @@ export const eventDefinitions: TableDescriptor = defineSegmentCatalogTable(
     docMd: "## unified.event_definitions\n\nPlanned events in the shared product-analytics shape.",
     columns: [
       tool,
-      C.str("event_name", "Event name.", (r) => r.key, false),
+      C.str("event_name", "Event name as sent in track/page/screen calls (the rule key).", (r) => r.key, false),
       C.str("display_name", "Display name (Segment has none; NULL).", () => null),
       C.str("description", "Description from the rule's JSON Schema.", (r) => r.jsonSchema?.description ?? null),
       C.str("category", "Rule type in lower case: track, page or screen.", (r) => String(r.type).toLowerCase()),
@@ -160,7 +160,7 @@ export const propertyDefinitions: TableDescriptor = defineSegmentCatalogTable(
   {
     name: "property_definitions",
     description: "Planned event properties and user/group traits in the shared product-analytics shape",
-    title: "Property Definitions (Shared Shape)",
+    title: "Shared Property Definitions",
     category: "unified",
     keywords: "product analytics, property definitions, traits, tracking plan, unified, segment, protocols",
     docLlm:
@@ -179,7 +179,7 @@ export const propertyDefinitions: TableDescriptor = defineSegmentCatalogTable(
         SCOPE[r.rule_type] === "event" ? r.event_name : null,
       ),
       C.str("data_type", "JSON Schema type(s), joined by '|'.", "data_type"),
-      C.str("description", "Description.", "description"),
+      C.str("description", "What the property means, from its JSON Schema description.", "description"),
       C.bool("is_array", "Array-valued.", "is_array"),
       C.bool("is_required", "Required.", "is_required"),
       C.bool("is_hidden", "Not tracked by Segment (NULL).", () => null),
@@ -204,7 +204,7 @@ export const cohorts: TableDescriptor = defineSegmentCatalogTable(
   {
     name: "cohorts",
     description: "Engage audiences in the shared product-analytics cohorts shape",
-    title: "Cohorts (Shared Shape)",
+    title: "Shared Cohorts",
     category: "unified",
     keywords: "product analytics, cohorts, audiences, engage, unified, segment",
     docLlm:
@@ -219,7 +219,7 @@ export const cohorts: TableDescriptor = defineSegmentCatalogTable(
       tool,
       C.str("id", "Audience id.", "id", false),
       C.str("name", "Audience name.", "name"),
-      C.str("description", "Description.", "description"),
+      C.str("description", "What the audience selects, as written by its author.", "description"),
       C.big("size", "Profiles in the audience (count).", "size.count"),
       C.time("created_at", "When created.", "createdAt"),
       C.time("updated_at", "When last changed.", "updatedAt"),
