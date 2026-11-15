@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A VGI worker for DuckDB, generated from the Query.Farm VGI starter template.",
+  "description": "Twilio Segment's control plane (sources, destinations, pipeline graph, warehouses and syncs, tracking plans, event volume, Reverse ETL, Engage, IAM) as SQL tables in DuckDB.",
   "license": "0BSD",
   "scripts": {
     "typecheck": "tsc --noEmit",

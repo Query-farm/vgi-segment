@@ -23,18 +23,24 @@ Faster loops while iterating: `make test-unit`, `make test-sql`, `make lint-expl
 ```
 src/
   worker.ts        # entry point: serves the catalog over stdio, --unix or --http
-  catalog.ts       # assembles the catalog; add new functions to FUNCTIONS
-  meta.ts          # catalog/schema metadata + helpers (objectTags, column)
-  greet.ts         # scalar example (overloads, const param with choices)
-  sequence.ts      # table function example (named args, streaming state)
-  fetch_items.ts   # REST API table function (pagination, retries, secrets)
+  catalog.ts       # assembles the catalog (schemas main, tracking, engage, iam, unified) + secret type
+  meta.ts          # catalog/schema metadata, categories, agent tasks + helpers (objectTags, column)
+  segment/
+    client.ts      # Public API client: bearer secret, regions, 429/5xx backoff, query encoding
+    table.ts       # spec -> table function / catalog table factory (fan-out queue + cursor in state)
+    resources.ts   # control-plane, tracking, engage and iam table specs
+    metrics.ts     # event_volume / delivery_overview (windows, chunking, groupBy from projection)
+    unified.ts     # unified.runs + shared product-analytics shapes
+    mask.ts        # secret redaction for settings maps
+    jsonschema.ts  # tracking-plan rule JSON Schema -> one row per property
+    pushdown.ts    # pushed WHERE predicates -> constraints
   cli.ts           # flag parsing: stdio / --unix / --http (PORT:<n>, /health)
   log.ts           # stderr logger
-bin/               # vgi-segment-worker (what DuckDB launches) and run-recipe
-tests/             # bun unit tests (worker subprocess + mock API)
+bin/               # vgi-segment-worker (what DuckDB launches)
+tests/             # bun unit tests (+ replay-server client paths)
 test/sql/          # sqllogictest files run through DuckDB
-test/mock_api/     # offline mock of the REST API used by tests
-examples/          # recipes: pushdown, caching, catalog tables, aggregates, COPY …
+test/mock_api/     # offline Segment Public API replay server used by tests
+test/fixtures/     # the hand-built workspace it serves
 ci/                # integration harness used by `make test-sql` and CI
 scripts/           # vgi_template.py (init / template-diff)
 vgi-agent-tests.yaml  # private graders for the agent test tasks
@@ -42,8 +48,8 @@ vgi-agent-tests.yaml  # private graders for the agent test tasks
 
 ## Recipe: add a function
 
-1. Create `src/<name>.ts`. Copy the closest example: `greet.ts` for a scalar,
-   `sequence.ts` for a generator, `fetch_items.ts` for an API.
+1. Add a spec to `src/segment/resources.ts` (or a new file) with
+   `defineSegmentCatalogTable` / `defineSegmentTable`; copy the closest existing spec.
 2. Declare arguments: `params` + `argDocs` (scalars), or the ordered `parameters`
    list when a constant needs `choices`/`ge`/`le`. Table functions use `args`,
    `argDocs` and `argConstraints`; an argument listed in `argDefaults` becomes a
@@ -135,8 +141,8 @@ and `examples/writable-tx-worker.ts` in vgi-typescript are complete workers.
 - **State must be serializable.** Table-function state (`initialState`/`process`) must be a plain object of numbers, bigints, strings, booleans, arrays or nested plain objects (no `Date`, `Map` or class instances): the SDK infers an Arrow schema for it and serializes it. Over HTTP each batch can be served by a different process, so the cursor travels with the request. Keep it small, and never put secrets in it.
 - **Examples must be deterministic.** Add `ORDER BY`, and no `now()`, random values or
   network. Examples that hit a live API go in `examples`, not `executable_examples`.
-- **Credentials.** Read them from a DuckDB secret first (`CREATE SECRET (TYPE segment_api, …)`),
-  then from an environment variable. Never put them in logs, examples or the repo, and
+- **Credentials.** Read them from a DuckDB secret first (`CREATE SECRET (TYPE segment, TOKEN …)`),
+  never from an environment variable. Never put them in logs, examples or the repo, and
   keep them out of table-function state unless the state rule above says
   the SDK encrypts it. Workers that need real credentials set `execute: false` on the metadata check.
 - **Errors.** Raise errors with a clear message. For HTTP failures, include the status
@@ -175,7 +181,6 @@ and `examples/writable-tx-worker.ts` in vgi-typescript are complete workers.
 ## Useful prompts
 
 - "Add a scalar `slugify(text VARCHAR) -> VARCHAR` with full metadata and tests."
-- "Replace `fetch_items` with a table function for <API>. Map its JSON to typed columns,
-  read the token from a `segment_api` secret, and add mock-server tests."
+- "Add a table for another Public API list endpoint, with fixtures in the replay server and SQL tests."
 - "Add a catalog table `countries` (code, name) with a primary key, following
   `examples/catalog_tables`."
